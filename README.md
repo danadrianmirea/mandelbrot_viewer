@@ -1,1 +1,1 @@
-"# mandelbrot_viewer" 
+A mandelbrot fractal viewer made in c++
