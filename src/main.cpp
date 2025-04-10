@@ -52,7 +52,9 @@ int highQualityMultiplier = 4;
 int minQualityMultiplier = 1;
 double renderScale = 1.0;
 double minRenderScale = 0.25;
-double smoothZoomFactor = 1.04;
+double smoothZoomFactor = 1.01;
+double fastSmoothZoomFactor = 1.04;
+
 double panSpeed = 0.01;
 
 // Mouse state
@@ -586,6 +588,7 @@ void drawUI(SDL_Renderer* renderer, TTF_Font* font, TTF_Font* titleFont, TTF_Fon
         "In Smooth Zoom Mode:",
         "  Left click (hold): Zoom in at cursor", 
         "  Right click (hold): Zoom out at cursor",
+        "  Hold Shift for faster zooming",
         "In Rectangle Mode:",
         "  Left click and drag: Select zoom area",
         "  Right click: Zoom out to previous view",
@@ -757,11 +760,17 @@ void smoothZoomToCursor(bool zoomOut, int mouseX, int mouseY, double& centerX, d
     double mouseXPlane = centerX + (mouseX - WINDOW_WIDTH/2.0) * (4.0/zoom) / WINDOW_WIDTH;
     double mouseYPlane = centerY + (mouseY - WINDOW_HEIGHT/2.0) * (4.0/zoom) / WINDOW_HEIGHT;  // Inverted y-axis
     
+    // Check if Shift key is being held
+    bool shiftPressed = (SDL_GetModState() & KMOD_SHIFT) != 0;
+    
+    // Choose the appropriate zoom factor based on Shift key state
+    double currentZoomFactor = shiftPressed ? fastSmoothZoomFactor : smoothZoomFactor;
+    
     // Apply zoom
     if (zoomOut) {
-        zoom /= smoothZoomFactor;
+        zoom /= currentZoomFactor;
     } else {
-        zoom *= smoothZoomFactor;
+        zoom *= currentZoomFactor;
     }
     
     // Adjust center to keep mouse position fixed
