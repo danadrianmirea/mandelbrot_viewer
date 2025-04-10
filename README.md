@@ -15,7 +15,7 @@ A GPU-accelerated Mandelbrot set viewer written in C++ using OpenCL and SFML.
 - C++17 compatible compiler
 - CMake 3.10 or higher
 - OpenCL development files
-- SFML 2.5 or higher
+- SDL2 2.30.5 or higher
 
 ## Building
 
