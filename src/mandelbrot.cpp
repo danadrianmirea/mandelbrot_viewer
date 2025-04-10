@@ -120,8 +120,8 @@ const std::string MandelbrotViewer::kernelSource = R"(
     }
 )";
 
-MandelbrotViewer::MandelbrotViewer(int w, int h, int maxIter)
-    : width(w), height(h), maxIterations(maxIter), colorMode(0), colorShift(0.0)
+MandelbrotViewer::MandelbrotViewer(int w, int h, int maxIter, int colorMode, int colorShift)
+    : width(w), height(h), maxIterations(maxIter), colorMode(colorMode), colorShift(colorShift)
 {
     std::cout << "Initializing MandelbrotViewer with size " << width << "x" << height << std::endl;
     

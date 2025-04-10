@@ -7,9 +7,9 @@
 
 class MandelbrotViewer {
 public:
-    MandelbrotViewer(int width, int height, int maxIterations = 1000);
+    MandelbrotViewer(int width, int height, int maxIterations, int colorMode, int colorShift);
     ~MandelbrotViewer();
-
+    
     void computeFrame(double centerX, double centerY, double zoom);
     void setColorMode(int mode);
     void setColorShift(double shift);
