@@ -48,6 +48,8 @@ cmake --build .
 ### In Smooth Zoom Mode:
 - Left click (hold): Zoom in at cursor
 - Right click (hold): Zoom out at cursor
+- Shift + Left click (hold): Fast zoom in at cursor
+- Shift + Right click (hold): Fast zoom out at cursor
 
 ### In Rectangle Selection Mode:
 - Left click and drag: Select area to zoom into
