@@ -18,6 +18,7 @@ struct ZoomState {
 };
 
 //#define FULLSCREEN 1
+#define DEFAULT_MAX_ITERATIONS 100
 
 // Constants for UI
 const int PANEL_WIDTH = 230;
@@ -46,12 +47,12 @@ double centerY = 0.0;
 double zoom = 1.5;
 int colorMode = 0;
 double colorShift = 3.2;
-int maxIterations = 400;
+int maxIterations = DEFAULT_MAX_ITERATIONS;
 int highQualityMultiplier = 4;
-int minQualityMultiplier = 2;
+int minQualityMultiplier = 1;
 double renderScale = 1.0;
 double minRenderScale = 0.25;
-double smoothZoomFactor = 1.05;
+double smoothZoomFactor = 1.04;
 double panSpeed = 0.01;
 
 // Mouse state
@@ -62,7 +63,7 @@ int startY = 0;
 int currentX = 0;
 int currentY = 0;
 Uint32 lastZoomTime = 0;  // Track last zoom time
-const Uint32 ZOOM_INTERVAL = 15;  // Minimum time between zooms in milliseconds
+const Uint32 ZOOM_INTERVAL = 10;  // Minimum time between zooms in milliseconds
 
 // Key states for diagonal panning
 bool keyPressed[4] = {false, false, false, false}; // up, down, left, right
@@ -250,7 +251,7 @@ int main(int argc, char* argv[]) {
                             // Convert pixel movement to complex plane movement
                             double scale = 4.0 / zoom;
                             centerX -= deltaX * scale / WINDOW_WIDTH;
-                            centerY += deltaY * scale / WINDOW_HEIGHT;
+                            centerY -= deltaY * scale / WINDOW_HEIGHT;  // Inverted y-axis by changing + to -
                             
                             lastMouseX = currentX;
                             lastMouseY = currentY;
@@ -817,7 +818,7 @@ void resetView(double& centerX, double& centerY, double& zoom, int& maxIteration
     centerX = -0.5;
     centerY = 0.0;
     zoom = 1.0;
-    maxIterations = 1000;
+    maxIterations = DEFAULT_MAX_ITERATIONS;
     int effectiveMaxIter = highQualityMode ? maxIterations * highQualityMultiplier : maxIterations;
     viewer.setMaxIterations(effectiveMaxIter);
     std::cout << "View reset to initial state" << std::endl;
