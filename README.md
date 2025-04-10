@@ -37,11 +37,38 @@ cmake --build .
 
 ## Controls
 
-- Left Mouse Button + Drag: Pan the view
+### Navigation
+- WASD: Pan the view in any direction
 - Mouse Wheel: Zoom in/out
+- M: Toggle between smooth zoom and rectangle selection modes
+- E (hold): Smooth zoom in toward cursor
+- Q (hold): Smooth zoom out from cursor
+- Backspace: Zoom out to previous view
+
+### In Smooth Zoom Mode:
+- Left click (hold): Zoom in at cursor
+- Right click (hold): Zoom out at cursor
+
+### In Rectangle Selection Mode:
+- Left click and drag: Select area to zoom into
+- Right click: Zoom out to previous view
+
+### Color Controls
 - C: Cycle through color palettes
-- Left/Right Arrow: Adjust color shift
-- Up/Down Arrow: Increase/decrease maximum iterations
+- Z/X: Shift colors left/right
+- Left/Right Arrow: Alternative way to shift colors
+
+### Quality Controls
+- I/O: Increase/decrease maximum iterations
+- Y: Toggle high quality mode
+- J/K: Decrease/increase quality multiplier
+- T: Toggle adaptive render scaling (reduces resolution during movement)
+
+### Other Controls
+- H: Toggle help panels
+- P: Print current settings
+- R: Reset view
+- V: Toggle debug mode
 - ESC: Close the window
 
 ## Color Palettes
