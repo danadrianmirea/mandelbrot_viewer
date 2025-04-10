@@ -43,7 +43,7 @@ bool drawing = false;
 // View parameters
 double centerX = -0.5;
 double centerY = 0.0;
-double zoom = 1.0;
+double zoom = 1.5;
 int colorMode = 0;
 double colorShift = 3.2;
 int maxIterations = 400;
