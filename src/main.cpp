@@ -124,6 +124,7 @@ void resetView(double& centerX, double& centerY, double& zoom, int& maxIteration
 void saveViewToHistory(double centerX, double& centerY, double& zoom, int maxIterations);
 void zoomOut(double& centerX, double& centerY, double& zoom, int& maxIterations, MandelbrotViewer& viewer);
 bool showFileDialog(SDL_Renderer* renderer, TTF_Font* font, const std::string& title, std::string& filename);
+std::string findFontPath(const std::string& fontName);
 
 int main(int argc, char* argv[]) {
     try {
@@ -207,9 +208,20 @@ int main(int argc, char* argv[]) {
         }
 
         // Load fonts
-        TTF_Font* font = TTF_OpenFont("fonts/arial.ttf", FONT_SIZE);
-        TTF_Font* titleFont = TTF_OpenFont("fonts/arial.ttf", TITLE_FONT_SIZE);
-        TTF_Font* messageFont = TTF_OpenFont("fonts/arial.ttf", MESSAGE_FONT_SIZE);
+        std::string fontPath = findFontPath("arial.ttf");
+        if (fontPath.empty()) {
+            std::cerr << "Failed to find arial.ttf in any of the search paths" << std::endl;
+            SDL_DestroyTexture(texture);
+            SDL_DestroyRenderer(renderer);
+            SDL_DestroyWindow(window);
+            TTF_Quit();
+            SDL_Quit();
+            return 1;
+        }
+
+        TTF_Font* font = TTF_OpenFont(fontPath.c_str(), FONT_SIZE);
+        TTF_Font* titleFont = TTF_OpenFont(fontPath.c_str(), TITLE_FONT_SIZE);
+        TTF_Font* messageFont = TTF_OpenFont(fontPath.c_str(), MESSAGE_FONT_SIZE);
         
         if (!font || !titleFont || !messageFont) {
             std::cerr << "Failed to load fonts: " << TTF_GetError() << std::endl;
@@ -1358,4 +1370,31 @@ bool showFileDialog(SDL_Renderer* renderer, TTF_Font* font, const std::string& t
     }
     
     return result;
+}
+
+std::string findFontPath(const std::string& fontName) {
+    // Try different possible locations
+    std::vector<std::string> possiblePaths = {
+        "fonts/" + fontName,           // Current directory
+        "../fonts/" + fontName,        // One level up
+        "../../fonts/" + fontName,     // Two levels up
+        "./fonts/" + fontName,         // Explicit current directory
+        "../mandelbrot_viewer/fonts/" + fontName  // From build directory to project root
+    };
+    
+    for (const auto& path : possiblePaths) {
+        FILE* file = fopen(path.c_str(), "r");
+        if (file) {
+            fclose(file);
+            std::cout << "Found font at: " << path << std::endl;
+            return path;
+        }
+    }
+    
+    std::cerr << "Could not find font file: " << fontName << std::endl;
+    std::cerr << "Searched in the following locations:" << std::endl;
+    for (const auto& path : possiblePaths) {
+        std::cerr << "  - " << path << std::endl;
+    }
+    return "";
 }
