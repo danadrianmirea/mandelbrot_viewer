@@ -59,8 +59,11 @@ const int MENU_ITEM_SAVE = 2;
 const int MENU_ITEM_LOAD = 3;
 
 // Add after the existing menu state variables
-std::string lastSavePath = "";
-std::string lastLoadPath = "";
+std::string lastFilename = "";  // Persistent filename for both save and load dialogs
+
+// Add after other timer variables
+Uint32 dialogCloseTime = 0;  // New: Time when dialog was closed
+const Uint32 DIALOG_CLOSE_DELAY = 100;  // New: Delay in milliseconds to ignore input after dialog close
 
 // Function to normalize color shift to [0, 2*PI] range
 double normalizeColorShift(double shift) {
@@ -241,6 +244,7 @@ int main(int argc, char* argv[]) {
                                     event.button.x > 230 || 
                                     event.button.y > MENU_HEIGHT + MENU_ITEM_HEIGHT * 4) {
                                     fileMenuOpen = false;
+                                    dialogCloseTime = SDL_GetTicks();  // Set timer when menu is closed by clicking outside
                                 } else if (event.button.y >= MENU_HEIGHT && event.button.y < MENU_HEIGHT + MENU_ITEM_HEIGHT * 4) {
                                     // Check if menu items were clicked
                                     if (event.button.x >= 130 && event.button.x <= 230) {
@@ -257,9 +261,9 @@ int main(int argc, char* argv[]) {
                                                     break;
                                                 case 1: // Save
                                                     {
-                                                        std::string filename = lastSavePath;
+                                                        std::string filename = lastFilename;
                                                         if (showFileDialog(renderer, font, "Enter filename to save:", filename)) {
-                                                            lastSavePath = filename;
+                                                            lastFilename = filename;  // Update persistent filename
                                                             ViewState state = {
                                                                 centerX, centerY, zoom, maxIterations,
                                                                 colorMode, colorShift, highQualityMode,
@@ -274,9 +278,9 @@ int main(int argc, char* argv[]) {
                                                     break;
                                                 case 2: // Load
                                                     {
-                                                        std::string filename = lastLoadPath;
+                                                        std::string filename = lastFilename;
                                                         if (showFileDialog(renderer, font, "Enter filename to load:", filename)) {
-                                                            lastLoadPath = filename;
+                                                            lastFilename = filename;  // Update persistent filename
                                                             ViewState state;
                                                             if (loadViewState(filename.c_str(), state)) {
                                                                 centerX = state.centerX;
@@ -307,7 +311,8 @@ int main(int argc, char* argv[]) {
                                         }
                                     }
                                 }
-                            } else if (!ignoreMouseActions && (SDL_GetTicks() - menuActionTime > MENU_ACTION_DELAY)) {  // Check timer
+                            } else if (!ignoreMouseActions && (SDL_GetTicks() - menuActionTime > MENU_ACTION_DELAY) && 
+                                      (SDL_GetTicks() - dialogCloseTime > DIALOG_CLOSE_DELAY)) {  // Check dialog close timer
                                 if (smoothZoomMode) {
                                     // In smooth zoom mode, just update current position
                                     currentX = event.button.x;
@@ -323,7 +328,8 @@ int main(int argc, char* argv[]) {
                             }
                         } else if (event.button.button == SDL_BUTTON_RIGHT) {
                             if (!ignoreMouseActions && (!showMenu || event.button.y >= MENU_HEIGHT) && 
-                                (SDL_GetTicks() - menuActionTime > MENU_ACTION_DELAY)) {  // Check timer
+                                (SDL_GetTicks() - menuActionTime > MENU_ACTION_DELAY) &&
+                                (SDL_GetTicks() - dialogCloseTime > DIALOG_CLOSE_DELAY)) {  // Check dialog close timer
                                 if (!smoothZoomMode) {
                                     // Zoom out to previous view
                                     zoomOut(centerX, centerY, zoom, maxIterations, viewer);
@@ -331,7 +337,8 @@ int main(int argc, char* argv[]) {
                             }
                         } else if (event.button.button == SDL_BUTTON_MIDDLE) {
                             if (!ignoreMouseActions && (!showMenu || event.button.y >= MENU_HEIGHT) && 
-                                (SDL_GetTicks() - menuActionTime > MENU_ACTION_DELAY)) {  // Check timer
+                                (SDL_GetTicks() - menuActionTime > MENU_ACTION_DELAY) &&
+                                (SDL_GetTicks() - dialogCloseTime > DIALOG_CLOSE_DELAY)) {  // Check dialog close timer
                                 // Middle click for panning
                                 isDragging = true;
                                 lastMouseX = event.button.x;
@@ -584,7 +591,8 @@ int main(int argc, char* argv[]) {
             if (smoothZoomMode) {
                 Uint32 mouseState = SDL_GetMouseState(&currentX, &currentY);
                 if (!showMenu || currentY >= MENU_HEIGHT) {
-                    if (SDL_GetTicks() - menuActionTime > MENU_ACTION_DELAY) {  // Check timer
+                    if (SDL_GetTicks() - menuActionTime > MENU_ACTION_DELAY && 
+                        SDL_GetTicks() - dialogCloseTime > DIALOG_CLOSE_DELAY) {  // Check dialog close timer
                         if (mouseState & SDL_BUTTON(SDL_BUTTON_LEFT)) {
                             // Zoom in while left button is held
                             smoothZoomToCursor(false, currentX, currentY, centerX, centerY, zoom);
@@ -1062,6 +1070,13 @@ bool showFileDialog(SDL_Renderer* renderer, TTF_Font* font, const std::string& t
     const int DIALOG_X = (WINDOW_WIDTH - DIALOG_WIDTH) / 2;
     const int DIALOG_Y = (WINDOW_HEIGHT - DIALOG_HEIGHT) / 2;
     
+    // Button dimensions and positions
+    const int BUTTON_WIDTH = 80;
+    const int BUTTON_HEIGHT = 25;
+    const int BUTTON_Y = DIALOG_Y + DIALOG_HEIGHT - BUTTON_HEIGHT - 10;
+    const int OK_BUTTON_X = DIALOG_X + DIALOG_WIDTH - BUTTON_WIDTH * 2 - 20;
+    const int CANCEL_BUTTON_X = DIALOG_X + DIALOG_WIDTH - BUTTON_WIDTH - 10;
+    
     bool done = false;
     bool result = false;
     std::string inputText = filename.empty() ? "": filename;
@@ -1074,12 +1089,43 @@ bool showFileDialog(SDL_Renderer* renderer, TTF_Font* font, const std::string& t
                     done = true;
                     break;
                     
+                case SDL_MOUSEBUTTONDOWN:
+                    // Check if click is outside dialog
+                    if (event.button.x < DIALOG_X || 
+                        event.button.x > DIALOG_X + DIALOG_WIDTH ||
+                        event.button.y < DIALOG_Y || 
+                        event.button.y > DIALOG_Y + DIALOG_HEIGHT) {
+                        dialogCloseTime = SDL_GetTicks();
+                        done = true;
+                    }
+                    // Check OK button click
+                    else if (event.button.x >= OK_BUTTON_X && 
+                             event.button.x <= OK_BUTTON_X + BUTTON_WIDTH &&
+                             event.button.y >= BUTTON_Y && 
+                             event.button.y <= BUTTON_Y + BUTTON_HEIGHT) {
+                        filename = inputText;
+                        result = true;
+                        dialogCloseTime = SDL_GetTicks();
+                        done = true;
+                    }
+                    // Check Cancel button click
+                    else if (event.button.x >= CANCEL_BUTTON_X && 
+                             event.button.x <= CANCEL_BUTTON_X + BUTTON_WIDTH &&
+                             event.button.y >= BUTTON_Y && 
+                             event.button.y <= BUTTON_Y + BUTTON_HEIGHT) {
+                        dialogCloseTime = SDL_GetTicks();
+                        done = true;
+                    }
+                    break;
+                    
                 case SDL_KEYDOWN:
                     if (event.key.keysym.sym == SDLK_RETURN) {
                         filename = inputText;
                         result = true;
+                        dialogCloseTime = SDL_GetTicks();
                         done = true;
                     } else if (event.key.keysym.sym == SDLK_ESCAPE) {
+                        dialogCloseTime = SDL_GetTicks();
                         done = true;
                     } else if (event.key.keysym.sym == SDLK_BACKSPACE && !inputText.empty()) {
                         inputText.pop_back();
@@ -1114,7 +1160,6 @@ bool showFileDialog(SDL_Renderer* renderer, TTF_Font* font, const std::string& t
         SDL_Surface* titleSurface = TTF_RenderText_Solid(font, title.c_str(), textColor);
         if (!titleSurface) {
             std::cerr << "Failed to render title text: " << TTF_GetError() << std::endl;
-            // Use a default text if rendering fails
             titleSurface = TTF_RenderText_Solid(font, "Error rendering title", textColor);
             if (!titleSurface) {
                 std::cerr << "Critical error: Cannot render any text" << std::endl;
@@ -1134,8 +1179,7 @@ bool showFileDialog(SDL_Renderer* renderer, TTF_Font* font, const std::string& t
         
         // Draw input text
         SDL_Surface* inputSurface = TTF_RenderText_Solid(font, inputText.c_str(), textColor);
-        if(inputSurface)
-        {
+        if(inputSurface) {
             SDL_Texture* inputTexture = SDL_CreateTextureFromSurface(renderer, inputSurface);
             SDL_Rect inputRect = {DIALOG_X + 15, DIALOG_Y + 50, inputSurface->w, inputSurface->h};
             SDL_RenderCopy(renderer, inputTexture, nullptr, &inputRect);
@@ -1143,23 +1187,49 @@ bool showFileDialog(SDL_Renderer* renderer, TTF_Font* font, const std::string& t
             SDL_DestroyTexture(inputTexture);
         }
         
-        // Draw instructions
-        const char* instructions = "Press Enter to confirm, Esc to cancel";
-        SDL_Surface* instrSurface = TTF_RenderText_Solid(font, instructions, textColor);
-        if (!instrSurface) {
-            std::cerr << "Failed to render instructions text: " << TTF_GetError() << std::endl;
-            // Use a default text if rendering fails
-            instrSurface = TTF_RenderText_Solid(font, "Error rendering instructions", textColor);
-            if (!instrSurface) {
-                std::cerr << "Critical error: Cannot render any text" << std::endl;
-                return false;
-            }
+        // Draw OK button
+        SDL_SetRenderDrawColor(renderer, 100, 150, 100, 255);
+        SDL_Rect okButtonRect = {OK_BUTTON_X, BUTTON_Y, BUTTON_WIDTH, BUTTON_HEIGHT};
+        SDL_RenderFillRect(renderer, &okButtonRect);
+        SDL_SetRenderDrawColor(renderer, 200, 200, 200, 255);
+        SDL_RenderDrawRect(renderer, &okButtonRect);
+        
+        // Draw OK text
+        SDL_Surface* okSurface = TTF_RenderText_Solid(font, "OK", textColor);
+        if (okSurface) {
+            SDL_Texture* okTexture = SDL_CreateTextureFromSurface(renderer, okSurface);
+            SDL_Rect okTextRect = {
+                OK_BUTTON_X + (BUTTON_WIDTH - okSurface->w) / 2,
+                BUTTON_Y + (BUTTON_HEIGHT - okSurface->h) / 2,
+                okSurface->w,
+                okSurface->h
+            };
+            SDL_RenderCopy(renderer, okTexture, nullptr, &okTextRect);
+            SDL_FreeSurface(okSurface);
+            SDL_DestroyTexture(okTexture);
         }
-        SDL_Texture* instrTexture = SDL_CreateTextureFromSurface(renderer, instrSurface);
-        SDL_Rect instrRect = {DIALOG_X + 10, DIALOG_Y + 100, instrSurface->w, instrSurface->h};
-        SDL_RenderCopy(renderer, instrTexture, nullptr, &instrRect);
-        SDL_FreeSurface(instrSurface);
-        SDL_DestroyTexture(instrTexture);
+        
+        // Draw Cancel button
+        SDL_SetRenderDrawColor(renderer, 150, 100, 100, 255);
+        SDL_Rect cancelButtonRect = {CANCEL_BUTTON_X, BUTTON_Y, BUTTON_WIDTH, BUTTON_HEIGHT};
+        SDL_RenderFillRect(renderer, &cancelButtonRect);
+        SDL_SetRenderDrawColor(renderer, 200, 200, 200, 255);
+        SDL_RenderDrawRect(renderer, &cancelButtonRect);
+        
+        // Draw Cancel text
+        SDL_Surface* cancelSurface = TTF_RenderText_Solid(font, "Cancel", textColor);
+        if (cancelSurface) {
+            SDL_Texture* cancelTexture = SDL_CreateTextureFromSurface(renderer, cancelSurface);
+            SDL_Rect cancelTextRect = {
+                CANCEL_BUTTON_X + (BUTTON_WIDTH - cancelSurface->w) / 2,
+                BUTTON_Y + (BUTTON_HEIGHT - cancelSurface->h) / 2,
+                cancelSurface->w,
+                cancelSurface->h
+            };
+            SDL_RenderCopy(renderer, cancelTexture, nullptr, &cancelTextRect);
+            SDL_FreeSurface(cancelSurface);
+            SDL_DestroyTexture(cancelTexture);
+        }
         
         SDL_RenderPresent(renderer);
     }
