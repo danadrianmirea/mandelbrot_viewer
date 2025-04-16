@@ -65,6 +65,14 @@ std::string lastFilename = "";  // Persistent filename for both save and load di
 Uint32 dialogCloseTime = 0;  // Time when dialog was closed
 const Uint32 DIALOG_CLOSE_DELAY = 100;  // Delay in milliseconds to ignore input after dialog close
 
+// Add after other state variables
+bool pendingPopup = false;  // Flag to indicate a popup should be shown on next frame
+int pendingMenuItem = -1;   // Store which menu item was clicked
+
+// Add after other timer variables
+Uint32 popupDelayTime = 0;  // Time when menu was closed and popup should be shown
+const Uint32 POPUP_DELAY = 100;  // Delay in milliseconds before showing popup
+
 // Function to normalize color shift to [0, 2*PI] range
 double normalizeColorShift(double shift) {
     while (shift < MIN_COLOR_SHIFT) shift += MAX_COLOR_SHIFT;
@@ -244,70 +252,18 @@ int main(int argc, char* argv[]) {
                                     event.button.x > 230 || 
                                     event.button.y > MENU_HEIGHT + MENU_ITEM_HEIGHT * 4) {
                                     fileMenuOpen = false;
-                                    dialogCloseTime = SDL_GetTicks();  // Set timer when menu is closed by clicking outside
+                                    dialogCloseTime = SDL_GetTicks();
                                 } else if (event.button.y >= MENU_HEIGHT && event.button.y < MENU_HEIGHT + MENU_ITEM_HEIGHT * 4) {
                                     // Check if menu items were clicked
                                     if (event.button.x >= 130 && event.button.x <= 230) {
                                         int menuItem = (event.button.y - MENU_HEIGHT) / MENU_ITEM_HEIGHT;
                                         if (menuItem >= 0 && menuItem < 4) {
-                                            // Close menu before handling any menu item
+                                            // Store the menu action to execute after delay
+                                            pendingMenuItem = menuItem;
                                             fileMenuOpen = false;
                                             ignoreMouseActions = true;
                                             menuActionTime = SDL_GetTicks();
-                                            
-                                            switch (menuItem) {
-                                                case 0: // Reset
-                                                    resetView(centerX, centerY, zoom, maxIterations, viewer);
-                                                    break;
-                                                case 1: // Save
-                                                    {
-                                                        std::string filename = lastFilename;
-                                                        if (showFileDialog(renderer, font, "Enter filename to save:", filename)) {
-                                                            lastFilename = filename;  // Update persistent filename
-                                                            ViewState state = {
-                                                                centerX, centerY, zoom, maxIterations,
-                                                                colorMode, colorShift, highQualityMode,
-                                                                highQualityMultiplier, adaptiveRenderScale,
-                                                                smoothZoomMode
-                                                            };
-                                                            if (saveViewState(filename.c_str(), state)) {
-                                                                std::cout << "View state saved successfully" << std::endl;
-                                                            }
-                                                        }
-                                                    }
-                                                    break;
-                                                case 2: // Load
-                                                    {
-                                                        std::string filename = lastFilename;
-                                                        if (showFileDialog(renderer, font, "Enter filename to load:", filename)) {
-                                                            lastFilename = filename;  // Update persistent filename
-                                                            ViewState state;
-                                                            if (loadViewState(filename.c_str(), state)) {
-                                                                centerX = state.centerX;
-                                                                centerY = state.centerY;
-                                                                zoom = state.zoom;
-                                                                maxIterations = state.maxIterations;
-                                                                colorMode = state.colorMode;
-                                                                colorShift = state.colorShift;
-                                                                highQualityMode = state.highQualityMode;
-                                                                highQualityMultiplier = state.highQualityMultiplier;
-                                                                adaptiveRenderScale = state.adaptiveRenderScale;
-                                                                smoothZoomMode = state.smoothZoomMode;
-                                                                
-                                                                viewer.setColorMode(colorMode);
-                                                                viewer.setColorShift(colorShift);
-                                                                viewer.setMaxIterations(highQualityMode ? 
-                                                                    maxIterations * highQualityMultiplier : maxIterations);
-                                                                
-                                                                std::cout << "View state loaded successfully" << std::endl;
-                                                            }
-                                                        }
-                                                    }
-                                                    break;
-                                                case 3: // Quit
-                                                    running = false;
-                                                    break;
-                                            }
+                                            popupDelayTime = SDL_GetTicks();  // Start popup delay timer
                                         }
                                     }
                                 }
@@ -583,6 +539,66 @@ int main(int argc, char* argv[]) {
                                 fileMenuOpen = false;
                                 break;
                         }
+                        break;
+                }
+            }
+
+            // Handle pending popup when delay has elapsed
+            if (pendingMenuItem != -1 && SDL_GetTicks() - popupDelayTime > POPUP_DELAY) {
+                int menuItem = pendingMenuItem;
+                pendingMenuItem = -1;  // Reset pending menu item
+                
+                switch (menuItem) {
+                    case 0: // Reset
+                        resetView(centerX, centerY, zoom, maxIterations, viewer);
+                        break;
+                    case 1: // Save
+                        {
+                            std::string filename = lastFilename;
+                            if (showFileDialog(renderer, font, "Enter filename to save:", filename)) {
+                                lastFilename = filename;
+                                ViewState state = {
+                                    centerX, centerY, zoom, maxIterations,
+                                    colorMode, colorShift, highQualityMode,
+                                    highQualityMultiplier, adaptiveRenderScale,
+                                    smoothZoomMode
+                                };
+                                if (saveViewState(filename.c_str(), state)) {
+                                    std::cout << "View state saved successfully" << std::endl;
+                                }
+                            }
+                        }
+                        break;
+                    case 2: // Load
+                        {
+                            std::string filename = lastFilename;
+                            if (showFileDialog(renderer, font, "Enter filename to load:", filename)) {
+                                lastFilename = filename;
+                                ViewState state;
+                                if (loadViewState(filename.c_str(), state)) {
+                                    centerX = state.centerX;
+                                    centerY = state.centerY;
+                                    zoom = state.zoom;
+                                    maxIterations = state.maxIterations;
+                                    colorMode = state.colorMode;
+                                    colorShift = state.colorShift;
+                                    highQualityMode = state.highQualityMode;
+                                    highQualityMultiplier = state.highQualityMultiplier;
+                                    adaptiveRenderScale = state.adaptiveRenderScale;
+                                    smoothZoomMode = state.smoothZoomMode;
+                                    
+                                    viewer.setColorMode(colorMode);
+                                    viewer.setColorShift(colorShift);
+                                    viewer.setMaxIterations(highQualityMode ? 
+                                        maxIterations * highQualityMultiplier : maxIterations);
+                                    
+                                    std::cout << "View state loaded successfully" << std::endl;
+                                }
+                            }
+                        }
+                        break;
+                    case 3: // Quit
+                        running = false;
                         break;
                 }
             }
