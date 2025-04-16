@@ -52,6 +52,8 @@ const Uint32 MENU_ACTION_DELAY = 100;  // Delay in milliseconds to ignore input 
 
 // Menu state
 bool fileMenuOpen = false;
+bool viewMenuOpen = false;  // New: View menu state
+bool isMaximized = false;   // New: Window maximized state
 const int MENU_HEIGHT = 20;
 const int MENU_ITEM_HEIGHT = 20;
 const int MENU_ITEM_PADDING = 5;
@@ -242,6 +244,14 @@ int main(int argc, char* argv[]) {
                                 // Check if File menu was clicked
                                 if (event.button.x >= 130 && event.button.x <= 170) {
                                     fileMenuOpen = !fileMenuOpen;
+                                    viewMenuOpen = false;  // Close View menu if open
+                                    ignoreMouseActions = true;
+                                    menuActionTime = SDL_GetTicks();
+                                }
+                                // Check if View menu was clicked
+                                else if (event.button.x >= 180 && event.button.x <= 230) {
+                                    viewMenuOpen = !viewMenuOpen;
+                                    fileMenuOpen = false;  // Close File menu if open
                                     ignoreMouseActions = true;
                                     menuActionTime = SDL_GetTicks();
                                 }
@@ -265,6 +275,27 @@ int main(int argc, char* argv[]) {
                                             menuActionTime = SDL_GetTicks();
                                             popupDelayTime = SDL_GetTicks();  // Start popup delay timer
                                         }
+                                    }
+                                }
+                            } else if (viewMenuOpen) {
+                                // Check if click is outside menu area
+                                if (event.button.y < MENU_HEIGHT || 
+                                    event.button.x < 180 || 
+                                    event.button.x > 280 || 
+                                    event.button.y > MENU_HEIGHT + MENU_ITEM_HEIGHT) {
+                                    viewMenuOpen = false;
+                                    dialogCloseTime = SDL_GetTicks();
+                                } else if (event.button.y >= MENU_HEIGHT && event.button.y < MENU_HEIGHT + MENU_ITEM_HEIGHT) {
+                                    // Check if menu item was clicked
+                                    if (event.button.x >= 180 && event.button.x <= 280) {
+                                        isMaximized = !isMaximized;
+                                        viewMenuOpen = false;
+                                        ignoreMouseActions = true;
+                                        menuActionTime = SDL_GetTicks();
+                                        popupDelayTime = SDL_GetTicks();
+
+                                        // Store the resize action
+                                        pendingMenuItem = 4;  // Use 4 for View menu actions
                                     }
                                 }
                             } else if (!ignoreMouseActions && (SDL_GetTicks() - menuActionTime > MENU_ACTION_DELAY) && 
@@ -373,7 +404,7 @@ int main(int argc, char* argv[]) {
 
                     case SDL_KEYDOWN:
                         // Ignore key events when file dialog is open
-                        if (fileMenuOpen) {
+                        if (fileMenuOpen || viewMenuOpen) {
                             break;
                         }
                         switch (event.key.keysym.sym) {
@@ -537,6 +568,7 @@ int main(int argc, char* argv[]) {
                             case SDL_WINDOWEVENT_FOCUS_LOST:
                                 // Close menu when window loses focus
                                 fileMenuOpen = false;
+                                viewMenuOpen = false;
                                 break;
                         }
                         break;
@@ -599,6 +631,50 @@ int main(int argc, char* argv[]) {
                         break;
                     case 3: // Quit
                         running = false;
+                        break;
+                    case 4: // Maximize/Minimize
+                        {
+                            if (isMaximized) {
+                                // Get the display bounds for the primary display
+                                SDL_DisplayMode displayMode;
+                                if (SDL_GetCurrentDisplayMode(0, &displayMode) != 0) {
+                                    std::cerr << "Failed to get display mode: " << SDL_GetError() << std::endl;
+                                    break;
+                                }
+                                // Leave some margin for taskbars and window borders
+                                const int margin = 100;
+                                WINDOW_WIDTH = displayMode.w - margin;
+                                WINDOW_HEIGHT = displayMode.h - margin;
+                            } else {
+                                WINDOW_WIDTH = 800;
+                                WINDOW_HEIGHT = 600;
+                            }
+                            
+                            // Recreate the window with new size
+                            SDL_SetWindowSize(window, WINDOW_WIDTH, WINDOW_HEIGHT);
+                            
+                            // Recreate the texture with new size
+                            SDL_DestroyTexture(texture);
+                            texture = SDL_CreateTexture(
+                                renderer,
+                                SDL_PIXELFORMAT_RGB24,
+                                SDL_TEXTUREACCESS_STREAMING,
+                                WINDOW_WIDTH,
+                                WINDOW_HEIGHT
+                            );
+                            
+                            if (!texture) {
+                                std::cerr << "Failed to create texture: " << SDL_GetError() << std::endl;
+                                SDL_DestroyRenderer(renderer);
+                                SDL_DestroyWindow(window);
+                                TTF_Quit();
+                                SDL_Quit();
+                                return 1;
+                            }
+                            
+                            // Update viewer size
+                            viewer.resize(WINDOW_WIDTH, WINDOW_HEIGHT);
+                        }
                         break;
                 }
             }
@@ -880,6 +956,18 @@ void drawMenu(SDL_Renderer* renderer, TTF_Font* font, int width) {
     SDL_FreeSurface(textSurface);
     SDL_DestroyTexture(textTexture);
 
+    // Draw View menu
+    SDL_Rect viewMenuRect = {180, 0, 50, MENU_HEIGHT};
+    SDL_RenderDrawRect(renderer, &viewMenuRect);
+    
+    // Draw View text
+    textSurface = TTF_RenderText_Solid(font, "View", textColor);
+    textTexture = SDL_CreateTextureFromSurface(renderer, textSurface);
+    textRect = {185, 2, textSurface->w, textSurface->h};
+    SDL_RenderCopy(renderer, textTexture, NULL, &textRect);
+    SDL_FreeSurface(textSurface);
+    SDL_DestroyTexture(textTexture);
+
     // Draw File menu items if open
     if (fileMenuOpen) {
         SDL_SetRenderDrawColor(renderer, 240, 240, 240, 255);
@@ -899,6 +987,25 @@ void drawMenu(SDL_Renderer* renderer, TTF_Font* font, int width) {
             SDL_FreeSurface(textSurface);
             SDL_DestroyTexture(textTexture);
         }
+    }
+
+    // Draw View menu items if open
+    if (viewMenuOpen) {
+        SDL_SetRenderDrawColor(renderer, 240, 240, 240, 255);
+        SDL_Rect menuRect = {180, MENU_HEIGHT, 100, MENU_ITEM_HEIGHT};
+        SDL_RenderFillRect(renderer, &menuRect);
+        
+        SDL_SetRenderDrawColor(renderer, 200, 200, 200, 255);
+        SDL_RenderDrawRect(renderer, &menuRect);
+
+        // Draw Maximize/Minimize text
+        const char* menuText = isMaximized ? "Minimize" : "Maximize";
+        textSurface = TTF_RenderText_Solid(font, menuText, textColor);
+        textTexture = SDL_CreateTextureFromSurface(renderer, textSurface);
+        textRect = {185, MENU_HEIGHT + 2, textSurface->w, textSurface->h};
+        SDL_RenderCopy(renderer, textTexture, NULL, &textRect);
+        SDL_FreeSurface(textSurface);
+        SDL_DestroyTexture(textTexture);
     }
 }
 

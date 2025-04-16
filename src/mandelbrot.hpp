@@ -19,16 +19,25 @@ public:
     const std::vector<unsigned char>& getImageData() const { return imageData; }
     int getWidth() const { return width; }
     int getHeight() const { return height; }
+    
+    void resize(int newWidth, int newHeight);
 
 private:
     void initializeOpenCL();
     void createBuffers();
     void releaseBuffers();
     void compileKernel();
+    void updateImage();
 
     int width;
     int height;
     int maxIterations;
+    double scale;
+    double offsetX;
+    double offsetY;
+    double zoom;
+    double centerX;
+    double centerY;
     int colorMode;
     double colorShift;
 
@@ -41,11 +50,14 @@ private:
     cl_mem rgbBuffer;
     cl_mem xArrayBuffer;
     cl_mem yArrayBuffer;
+    cl_mem imageBuffer;
 
     std::vector<unsigned char> imageData;
     std::vector<int> iterations;
     std::vector<double> xArray;
     std::vector<double> yArray;
+
+    cl_int err;
 
     static const std::string kernelSource;
 }; 

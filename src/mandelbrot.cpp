@@ -336,8 +336,162 @@ void MandelbrotViewer::setColorShift(double shift) {
 
 void MandelbrotViewer::setMaxIterations(int maxIter) {
     maxIterations = maxIter;
+    updateImage();
+}
+
+void MandelbrotViewer::resize(int newWidth, int newHeight) {
+    if (newWidth <= 0 || newHeight <= 0) {
+        return;
+    }
+
+    // Store the center point before resize
+    double oldCenterX = centerX;
+    double oldCenterY = centerY;
+    double oldZoom = zoom;
+
+    // Resize the image data buffer
+    imageData.resize(newWidth * newHeight * 3);
+    iterations.resize(newWidth * newHeight);
+    xArray.resize(newWidth);
+    yArray.resize(newHeight);
+
+    // Release old OpenCL resources
+    releaseBuffers();
+
+    // Update dimensions
+    width = newWidth;
+    height = newHeight;
+
+    // Create new OpenCL buffers with updated sizes
+    createBuffers();
+
+    // Restore the view parameters
+    centerX = oldCenterX;
+    centerY = oldCenterY;
+    zoom = oldZoom;
+
+    // Update kernel arguments with new dimensions
+    cl_int err;
+    if ((err = clSetKernelArg(kernel, 4, sizeof(int), &width)) != CL_SUCCESS ||
+        (err = clSetKernelArg(kernel, 5, sizeof(int), &height)) != CL_SUCCESS ||
+        (err = clSetKernelArg(kernel, 6, sizeof(int), &maxIterations)) != CL_SUCCESS ||
+        (err = clSetKernelArg(kernel, 7, sizeof(int), &colorMode)) != CL_SUCCESS ||
+        (err = clSetKernelArg(kernel, 8, sizeof(double), &colorShift)) != CL_SUCCESS) {
+        std::cerr << "Failed to set kernel arguments after resize. Error code: " << err << std::endl;
+        throw std::runtime_error("Failed to set kernel arguments after resize");
+    }
+
+    // Update the image with new dimensions
+    updateImage();
 }
 
 int MandelbrotViewer::getMaxIterations() const {
     return maxIterations;
+}
+
+void MandelbrotViewer::updateImage() {
+    // Calculate coordinate arrays
+    double aspectRatio = static_cast<double>(width) / height;
+    double scale = 4.0 / zoom;
+    
+    for (int x = 0; x < width; ++x) {
+        xArray[x] = centerX + (x - width/2.0) * scale / width * aspectRatio;
+    }
+    
+    for (int y = 0; y < height; ++y) {
+        yArray[y] = centerY + (y - height/2.0) * scale / height;
+    }
+
+    // Copy coordinate arrays to device
+    cl_int err = clEnqueueWriteBuffer(queue, xArrayBuffer, CL_TRUE, 0,
+        width * sizeof(double), xArray.data(), 0, nullptr, nullptr);
+    if (err != CL_SUCCESS) {
+        std::cerr << "Failed to write X array. Error code: " << err << std::endl;
+        throw std::runtime_error("Failed to write X array");
+    }
+
+    err = clEnqueueWriteBuffer(queue, yArrayBuffer, CL_TRUE, 0,
+        height * sizeof(double), yArray.data(), 0, nullptr, nullptr);
+    if (err != CL_SUCCESS) {
+        std::cerr << "Failed to write Y array. Error code: " << err << std::endl;
+        throw std::runtime_error("Failed to write Y array");
+    }
+
+    // Set kernel arguments
+    err = clSetKernelArg(kernel, 0, sizeof(cl_mem), &iterationsBuffer);
+    if (err != CL_SUCCESS) {
+        std::cerr << "Failed to set kernel argument 0. Error code: " << err << std::endl;
+        throw std::runtime_error("Failed to set kernel argument 0");
+    }
+    
+    err = clSetKernelArg(kernel, 1, sizeof(cl_mem), &rgbBuffer);
+    if (err != CL_SUCCESS) {
+        std::cerr << "Failed to set kernel argument 1. Error code: " << err << std::endl;
+        throw std::runtime_error("Failed to set kernel argument 1");
+    }
+    
+    err = clSetKernelArg(kernel, 2, sizeof(cl_mem), &xArrayBuffer);
+    if (err != CL_SUCCESS) {
+        std::cerr << "Failed to set kernel argument 2. Error code: " << err << std::endl;
+        throw std::runtime_error("Failed to set kernel argument 2");
+    }
+    
+    err = clSetKernelArg(kernel, 3, sizeof(cl_mem), &yArrayBuffer);
+    if (err != CL_SUCCESS) {
+        std::cerr << "Failed to set kernel argument 3. Error code: " << err << std::endl;
+        throw std::runtime_error("Failed to set kernel argument 3");
+    }
+    
+    err = clSetKernelArg(kernel, 4, sizeof(int), &width);
+    if (err != CL_SUCCESS) {
+        std::cerr << "Failed to set kernel argument 4. Error code: " << err << std::endl;
+        throw std::runtime_error("Failed to set kernel argument 4");
+    }
+    
+    err = clSetKernelArg(kernel, 5, sizeof(int), &height);
+    if (err != CL_SUCCESS) {
+        std::cerr << "Failed to set kernel argument 5. Error code: " << err << std::endl;
+        throw std::runtime_error("Failed to set kernel argument 5");
+    }
+    
+    err = clSetKernelArg(kernel, 6, sizeof(int), &maxIterations);
+    if (err != CL_SUCCESS) {
+        std::cerr << "Failed to set kernel argument 6. Error code: " << err << std::endl;
+        throw std::runtime_error("Failed to set kernel argument 6");
+    }
+    
+    err = clSetKernelArg(kernel, 7, sizeof(int), &colorMode);
+    if (err != CL_SUCCESS) {
+        std::cerr << "Failed to set kernel argument 7. Error code: " << err << std::endl;
+        throw std::runtime_error("Failed to set kernel argument 7");
+    }
+    
+    err = clSetKernelArg(kernel, 8, sizeof(double), &colorShift);
+    if (err != CL_SUCCESS) {
+        std::cerr << "Failed to set kernel argument 8. Error code: " << err << std::endl;
+        throw std::runtime_error("Failed to set kernel argument 8");
+    }
+
+    // Execute kernel
+    size_t globalSize = width * height;
+    size_t localSize = 64; // Common work group size for many GPUs
+    
+    // Ensure globalSize is a multiple of localSize
+    if (globalSize % localSize != 0) {
+        globalSize = ((globalSize + localSize - 1) / localSize) * localSize;
+    }
+    
+    err = clEnqueueNDRangeKernel(queue, kernel, 1, nullptr, &globalSize, &localSize, 0, nullptr, nullptr);
+    if (err != CL_SUCCESS) {
+        std::cerr << "Failed to execute kernel. Error code: " << err << std::endl;
+        throw std::runtime_error("Failed to execute kernel");
+    }
+
+    // Read results
+    err = clEnqueueReadBuffer(queue, rgbBuffer, CL_TRUE, 0,
+        width * height * 3 * sizeof(unsigned char), imageData.data(), 0, nullptr, nullptr);
+    if (err != CL_SUCCESS) {
+        std::cerr << "Failed to read RGB buffer. Error code: " << err << std::endl;
+        throw std::runtime_error("Failed to read RGB buffer");
+    }
 } 
