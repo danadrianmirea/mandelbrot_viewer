@@ -54,12 +54,14 @@ const Uint32 MENU_ACTION_DELAY = 100;  // Delay in milliseconds to ignore input 
 // Menu state
 bool fileMenuOpen = false;
 bool viewMenuOpen = false;  // New: View menu state
+bool helpMenuOpen = false;  // New: Help menu state
 bool isMaximized = false;   // New: Window maximized state
 const int MENU_HEIGHT = 20;
 const int MENU_ITEM_HEIGHT = 20;
 const int MENU_ITEM_PADDING = 5;
 const int MENU_ITEM_SAVE = 2;
 const int MENU_ITEM_LOAD = 3;
+const int MENU_ITEM_ABOUT = 6;  // Changed to 6 to avoid conflicts with other menu items
 
 // Add after the existing menu state variables
 std::string lastFilename = "";  // Persistent filename for both save and load dialogs
@@ -140,6 +142,7 @@ std::string findFontPath(const std::string& fontName);
 bool renderHighResImage(const std::string& filename, SDL_Renderer* renderer, 
                        double centerX, double centerY, double zoom, 
                        int maxIterations, int colorMode, double colorShift);
+void showAboutDialog(SDL_Renderer* renderer, TTF_Font* font);
 
 int main(int argc, char* argv[]) {
     try {
@@ -280,6 +283,7 @@ int main(int argc, char* argv[]) {
                                 if (event.button.x >= 130 && event.button.x <= 170) {
                                     fileMenuOpen = !fileMenuOpen;
                                     viewMenuOpen = false;  // Close View menu if open
+                                    helpMenuOpen = false;  // Close Help menu if open
                                     ignoreMouseActions = true;
                                     menuActionTime = SDL_GetTicks();
                                 }
@@ -287,6 +291,16 @@ int main(int argc, char* argv[]) {
                                 else if (event.button.x >= 180 && event.button.x <= 230) {
                                     viewMenuOpen = !viewMenuOpen;
                                     fileMenuOpen = false;  // Close File menu if open
+                                    helpMenuOpen = false;  // Close Help menu if open
+                                    ignoreMouseActions = true;
+                                    menuActionTime = SDL_GetTicks();
+                                }
+                                // Check if Help menu was clicked
+                                else if (event.button.x >= 310 && event.button.x <= 360) {
+                                    helpMenuOpen = !helpMenuOpen;
+                                    fileMenuOpen = false;  // Close other menus
+                                    viewMenuOpen = false;
+                                    renderMenuOpen = false;
                                     ignoreMouseActions = true;
                                     menuActionTime = SDL_GetTicks();
                                 }
@@ -295,6 +309,7 @@ int main(int argc, char* argv[]) {
                                     renderMenuOpen = !renderMenuOpen;
                                     fileMenuOpen = false;  // Close other menus
                                     viewMenuOpen = false;
+                                    helpMenuOpen = false;
                                     ignoreMouseActions = true;
                                     menuActionTime = SDL_GetTicks();
                                 }
@@ -339,6 +354,25 @@ int main(int argc, char* argv[]) {
 
                                         // Store the resize action
                                         pendingMenuItem = 4;  // Use 4 for View menu actions
+                                    }
+                                }
+                            } else if (helpMenuOpen) {
+                                // Check if click is outside menu area
+                                if (event.button.y < MENU_HEIGHT || 
+                                    event.button.x < 310 || 
+                                    event.button.x > 410 || 
+                                    event.button.y > MENU_HEIGHT + MENU_ITEM_HEIGHT) {
+                                    helpMenuOpen = false;
+                                    dialogCloseTime = SDL_GetTicks();
+                                } else if (event.button.y >= MENU_HEIGHT && 
+                                         event.button.y < MENU_HEIGHT + MENU_ITEM_HEIGHT) {
+                                    // About menu item clicked
+                                    if (event.button.x >= 310 && event.button.x <= 410) {
+                                        pendingMenuItem = MENU_ITEM_ABOUT;
+                                        helpMenuOpen = false;
+                                        ignoreMouseActions = true;
+                                        menuActionTime = SDL_GetTicks();
+                                        popupDelayTime = SDL_GetTicks();
                                     }
                                 }
                             } else if (renderMenuOpen) {
@@ -466,7 +500,7 @@ int main(int argc, char* argv[]) {
 
                     case SDL_KEYDOWN:
                         // Ignore key events when file dialog is open
-                        if (fileMenuOpen || viewMenuOpen || renderMenuOpen) {
+                        if (fileMenuOpen || viewMenuOpen || renderMenuOpen || helpMenuOpen) {
                             break;
                         }
                         switch (event.key.keysym.sym) {
@@ -520,23 +554,11 @@ int main(int argc, char* argv[]) {
                                     saveViewToHistory(centerX, centerY, zoom, maxIterations);
                                 }
                                 break;
-                            case SDLK_y:
-                                toggleQualityMode(highQualityMode, maxIterations, highQualityMultiplier);
-                                viewer.setMaxIterations(maxIterations);
-                                break;
                             case SDLK_j:
                                 adjustQualityMultiplier(false, highQualityMultiplier, minQualityMultiplier);
                                 break;
                             case SDLK_k:
                                 adjustQualityMultiplier(true, highQualityMultiplier, minQualityMultiplier);
-                                break;
-                            case SDLK_t:
-                                adaptiveRenderScale = !adaptiveRenderScale;
-                                std::cout << "Adaptive render scale: " << (adaptiveRenderScale ? "Enabled" : "Disabled") << std::endl;
-                                break;
-                            case SDLK_v:
-                                debugMode = !debugMode;
-                                std::cout << "Debug mode: " << (debugMode ? "Enabled" : "Disabled") << std::endl;
                                 break;
                             case SDLK_r:
                                 resetView(centerX, centerY, zoom, maxIterations, viewer);
@@ -632,6 +654,7 @@ int main(int argc, char* argv[]) {
                                 fileMenuOpen = false;
                                 viewMenuOpen = false;
                                 renderMenuOpen = false;
+                                helpMenuOpen = false;
                                 break;
                         }
                         break;
@@ -716,6 +739,9 @@ int main(int argc, char* argv[]) {
                             // Recreate the window with new size
                             SDL_SetWindowSize(window, WINDOW_WIDTH, WINDOW_HEIGHT);
                             
+                            // Center the window on the screen
+                            SDL_SetWindowPosition(window, SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED);
+                            
                             // Recreate the texture with new size
                             SDL_DestroyTexture(texture);
                             texture = SDL_CreateTexture(
@@ -750,6 +776,9 @@ int main(int argc, char* argv[]) {
                                 }
                             }
                         }
+                        break;
+                    case MENU_ITEM_ABOUT:
+                        showAboutDialog(renderer, font);
                         break;
                 }
             }
@@ -922,9 +951,6 @@ void drawUI(SDL_Renderer* renderer, TTF_Font* font, TTF_Font* titleFont, TTF_Fon
         "Z/X: Shift colors left/right",
         "I/O: Increase/Decrease iterations", 
         "J/K: Decrease/Increase quality multiplier",
-        "T: Toggle adaptive render scaling",
-        "Y: Toggle high quality mode",
-        "V: Toggle debug mode",
         "R: Reset view",
         "P: Print current settings",
         "Backspace: Zoom out",
@@ -945,7 +971,6 @@ void drawUI(SDL_Renderer* renderer, TTF_Font* font, TTF_Font* titleFont, TTF_Fon
         "Zoom: " + std::to_string(zoom),
         "Iterations: " + std::to_string(effectiveMaxIter) + " (" + qualityText + ")",
         "Color: " + colorNames[colorMode] + " (Shift: " + std::to_string(colorShift) + ")",
-        "Debug: " + debugText,
         "Resolution: " + std::to_string(width) + "x" + std::to_string(height)
     };
     
@@ -1056,6 +1081,18 @@ void drawMenu(SDL_Renderer* renderer, TTF_Font* font, int width) {
     SDL_FreeSurface(textSurface);
     SDL_DestroyTexture(textTexture);
 
+    // Draw Help menu
+    SDL_Rect helpMenuRect = {310, 0, 50, MENU_HEIGHT};
+    SDL_RenderDrawRect(renderer, &helpMenuRect);
+    
+    // Draw Help text
+    textSurface = TTF_RenderText_Solid(font, "Help", textColor);
+    textTexture = SDL_CreateTextureFromSurface(renderer, textSurface);
+    textRect = {315, 2, textSurface->w, textSurface->h};
+    SDL_RenderCopy(renderer, textTexture, NULL, &textRect);
+    SDL_FreeSurface(textSurface);
+    SDL_DestroyTexture(textTexture);
+
     // Draw File menu items if open
     if (fileMenuOpen) {
         SDL_SetRenderDrawColor(renderer, 240, 240, 240, 255);
@@ -1109,6 +1146,24 @@ void drawMenu(SDL_Renderer* renderer, TTF_Font* font, int width) {
         textSurface = TTF_RenderText_Solid(font, "Image", textColor);
         textTexture = SDL_CreateTextureFromSurface(renderer, textSurface);
         textRect = {245, MENU_HEIGHT + 2, textSurface->w, textSurface->h};
+        SDL_RenderCopy(renderer, textTexture, NULL, &textRect);
+        SDL_FreeSurface(textSurface);
+        SDL_DestroyTexture(textTexture);
+    }
+
+    // Draw Help menu items if open
+    if (helpMenuOpen) {
+        SDL_SetRenderDrawColor(renderer, 240, 240, 240, 255);
+        SDL_Rect menuRect = {310, MENU_HEIGHT, 100, MENU_ITEM_HEIGHT};
+        SDL_RenderFillRect(renderer, &menuRect);
+        
+        SDL_SetRenderDrawColor(renderer, 200, 200, 200, 255);
+        SDL_RenderDrawRect(renderer, &menuRect);
+
+        // Draw About text
+        textSurface = TTF_RenderText_Solid(font, "About", textColor);
+        textTexture = SDL_CreateTextureFromSurface(renderer, textSurface);
+        textRect = {315, MENU_HEIGHT + 2, textSurface->w, textSurface->h};
         SDL_RenderCopy(renderer, textTexture, NULL, &textRect);
         SDL_FreeSurface(textSurface);
         SDL_DestroyTexture(textTexture);
@@ -1420,23 +1475,19 @@ bool showFileDialog(SDL_Renderer* renderer, TTF_Font* font, const std::string& t
         SDL_SetRenderDrawColor(renderer, 100, 150, 100, 255);
         SDL_Rect okButtonRect = {OK_BUTTON_X, BUTTON_Y, BUTTON_WIDTH, BUTTON_HEIGHT};
         SDL_RenderFillRect(renderer, &okButtonRect);
-        SDL_SetRenderDrawColor(renderer, 200, 200, 200, 255);
-        SDL_RenderDrawRect(renderer, &okButtonRect);
         
         // Draw OK text
         SDL_Surface* okSurface = TTF_RenderText_Solid(font, "OK", textColor);
-        if (okSurface) {
-            SDL_Texture* okTexture = SDL_CreateTextureFromSurface(renderer, okSurface);
-            SDL_Rect okTextRect = {
-                OK_BUTTON_X + (BUTTON_WIDTH - okSurface->w) / 2,
-                BUTTON_Y + (BUTTON_HEIGHT - okSurface->h) / 2,
-                okSurface->w,
-                okSurface->h
-            };
-            SDL_RenderCopy(renderer, okTexture, nullptr, &okTextRect);
-            SDL_FreeSurface(okSurface);
-            SDL_DestroyTexture(okTexture);
-        }
+        SDL_Texture* okTexture = SDL_CreateTextureFromSurface(renderer, okSurface);
+        SDL_Rect okTextRect = {
+            OK_BUTTON_X + (BUTTON_WIDTH - okSurface->w) / 2,
+            BUTTON_Y + (BUTTON_HEIGHT - okSurface->h) / 2,
+            okSurface->w,
+            okSurface->h
+        };
+        SDL_RenderCopy(renderer, okTexture, nullptr, &okTextRect);
+        SDL_FreeSurface(okSurface);
+        SDL_DestroyTexture(okTexture);
         
         // Draw Cancel button
         SDL_SetRenderDrawColor(renderer, 150, 100, 100, 255);
@@ -1447,18 +1498,16 @@ bool showFileDialog(SDL_Renderer* renderer, TTF_Font* font, const std::string& t
         
         // Draw Cancel text
         SDL_Surface* cancelSurface = TTF_RenderText_Solid(font, "Cancel", textColor);
-        if (cancelSurface) {
-            SDL_Texture* cancelTexture = SDL_CreateTextureFromSurface(renderer, cancelSurface);
-            SDL_Rect cancelTextRect = {
-                CANCEL_BUTTON_X + (BUTTON_WIDTH - cancelSurface->w) / 2,
-                BUTTON_Y + (BUTTON_HEIGHT - cancelSurface->h) / 2,
-                cancelSurface->w,
-                cancelSurface->h
-            };
-            SDL_RenderCopy(renderer, cancelTexture, nullptr, &cancelTextRect);
-            SDL_FreeSurface(cancelSurface);
-            SDL_DestroyTexture(cancelTexture);
-        }
+        SDL_Texture* cancelTexture = SDL_CreateTextureFromSurface(renderer, cancelSurface);
+        SDL_Rect cancelTextRect = {
+            CANCEL_BUTTON_X + (BUTTON_WIDTH - cancelSurface->w) / 2,
+            BUTTON_Y + (BUTTON_HEIGHT - cancelSurface->h) / 2,
+            cancelSurface->w,
+            cancelSurface->h
+        };
+        SDL_RenderCopy(renderer, cancelTexture, nullptr, &cancelTextRect);
+        SDL_FreeSurface(cancelSurface);
+        SDL_DestroyTexture(cancelTexture);
         
         SDL_RenderPresent(renderer);
     }
@@ -1547,4 +1596,130 @@ bool renderHighResImage(const std::string& filename, SDL_Renderer* renderer,
         std::cout << "  Quality multiplier: " << highQualityMultiplier << "x" << std::endl;
     }
     return true;
+}
+
+void showAboutDialog(SDL_Renderer* renderer, TTF_Font* font) {
+    const int DIALOG_WIDTH = 500;
+    const int DIALOG_HEIGHT = 450;
+    const int DIALOG_X = (WINDOW_WIDTH - DIALOG_WIDTH) / 2;
+    const int DIALOG_Y = (WINDOW_HEIGHT - DIALOG_HEIGHT) / 2;
+    
+    // Button dimensions
+    const int BUTTON_WIDTH = 100;
+    const int BUTTON_HEIGHT = 30;
+    const int BUTTON_X = DIALOG_X + (DIALOG_WIDTH - BUTTON_WIDTH) / 2;
+    const int BUTTON_Y = DIALOG_Y + DIALOG_HEIGHT - BUTTON_HEIGHT - 20;
+    
+    bool done = false;
+    
+    while (!done) {
+        SDL_Event event;
+        while (SDL_PollEvent(&event)) {
+            switch (event.type) {
+                case SDL_QUIT:
+                    done = true;
+                    break;
+                    
+                case SDL_MOUSEBUTTONDOWN:
+                    // Check if click is on OK button
+                    if (event.button.x >= BUTTON_X && 
+                        event.button.x <= BUTTON_X + BUTTON_WIDTH &&
+                        event.button.y >= BUTTON_Y && 
+                        event.button.y <= BUTTON_Y + BUTTON_HEIGHT) {
+                        dialogCloseTime = SDL_GetTicks();
+                        done = true;
+                    }
+                    // Check if click is outside dialog
+                    else if (event.button.x < DIALOG_X || 
+                        event.button.x > DIALOG_X + DIALOG_WIDTH ||
+                        event.button.y < DIALOG_Y || 
+                        event.button.y > DIALOG_Y + DIALOG_HEIGHT) {
+                        dialogCloseTime = SDL_GetTicks();
+                        done = true;
+                    }
+                    break;
+                    
+                case SDL_KEYDOWN:
+                    if (event.key.keysym.sym == SDLK_ESCAPE) {
+                        dialogCloseTime = SDL_GetTicks();
+                        done = true;
+                    }
+                    break;
+            }
+        }
+        
+        // Draw dialog background
+        SDL_SetRenderDrawColor(renderer, 50, 50, 50, 255);
+        SDL_Rect dialogRect = {DIALOG_X, DIALOG_Y, DIALOG_WIDTH, DIALOG_HEIGHT};
+        SDL_RenderFillRect(renderer, &dialogRect);
+        
+        // Draw dialog border
+        SDL_SetRenderDrawColor(renderer, 200, 200, 200, 255);
+        SDL_RenderDrawRect(renderer, &dialogRect);
+        
+        // Draw title
+        SDL_Color textColor = {255, 255, 255, 255};
+        SDL_Surface* titleSurface = TTF_RenderText_Solid(font, "About Mandelbrot Viewer", textColor);
+        SDL_Texture* titleTexture = SDL_CreateTextureFromSurface(renderer, titleSurface);
+        SDL_Rect titleRect = {DIALOG_X + 10, DIALOG_Y + 10, titleSurface->w, titleSurface->h};
+        SDL_RenderCopy(renderer, titleTexture, nullptr, &titleRect);
+        SDL_FreeSurface(titleSurface);
+        SDL_DestroyTexture(titleTexture);
+        
+        // Draw about text
+        std::vector<std::string> aboutText = {
+            "Mandelbrot Viewer is an interactive application for exploring",
+            "the Mandelbrot set fractal. It allows you to zoom, pan, and",
+            "customize the visualization in real-time.",
+            "Controls:",
+            " ",
+            "  - Left click/Right click (hold): Zoom in at cursor",
+            "  - Middle click and drag: Pan the view",
+            "  - Mouse wheel: Zoom in/out at cursor position",
+            "  - W/A/S/D: Pan the view",
+            "  - C: Change color mode",
+            "  - Z/X: Shift colors left/right",
+            "  - I/O: Increase/Decrease iterations",
+            "  - J/K: Decrease/Increase quality multiplier",
+            "  - R: Reset view",
+            "  - H: Toggle help panels",
+            "  - P: Print current settings",
+            "  - Backspace: Zoom out"
+        };
+        
+        int yOffset = DIALOG_Y + 50;
+        for (const auto& line : aboutText) {
+            SDL_Surface* textSurface = TTF_RenderText_Solid(font, line.c_str(), textColor);
+            SDL_Texture* textTexture = SDL_CreateTextureFromSurface(renderer, textSurface);
+            SDL_Rect textRect = {DIALOG_X + 20, yOffset, textSurface->w, textSurface->h};
+            SDL_RenderCopy(renderer, textTexture, nullptr, &textRect);
+            SDL_FreeSurface(textSurface);
+            SDL_DestroyTexture(textTexture);
+            yOffset += 20;
+        }
+        
+        // Draw OK button
+        SDL_SetRenderDrawColor(renderer, 100, 150, 100, 255);
+        SDL_Rect buttonRect = {BUTTON_X, BUTTON_Y, BUTTON_WIDTH, BUTTON_HEIGHT};
+        SDL_RenderFillRect(renderer, &buttonRect);
+        
+        // Draw button border
+        SDL_SetRenderDrawColor(renderer, 200, 200, 200, 255);
+        SDL_RenderDrawRect(renderer, &buttonRect);
+        
+        // Draw OK text
+        SDL_Surface* okSurface = TTF_RenderText_Solid(font, "OK", textColor);
+        SDL_Texture* okTexture = SDL_CreateTextureFromSurface(renderer, okSurface);
+        SDL_Rect okRect = {
+            BUTTON_X + (BUTTON_WIDTH - okSurface->w) / 2,
+            BUTTON_Y + (BUTTON_HEIGHT - okSurface->h) / 2,
+            okSurface->w,
+            okSurface->h
+        };
+        SDL_RenderCopy(renderer, okTexture, nullptr, &okRect);
+        SDL_FreeSurface(okSurface);
+        SDL_DestroyTexture(okTexture);
+        
+        SDL_RenderPresent(renderer);
+    }
 }
