@@ -45,10 +45,10 @@ bool smoothZoomMode = true;
 bool isDragging = false;
 bool isPanning = false;
 bool drawing = false;
-bool showMenu = true;  // New: Menu visibility state
-bool ignoreMouseActions = false;  // New: Flag to ignore mouse actions after menu interaction
-Uint32 menuActionTime = 0;  // New: Time when last menu action occurred
-const Uint32 MENU_ACTION_DELAY = 100;  // New: Delay in milliseconds to ignore input after menu action
+bool showMenu = true;  // Menu visibility state
+bool ignoreMouseActions = false;  // Flag to ignore mouse actions after menu interaction
+Uint32 menuActionTime = 0;  // Time when last menu action occurred
+const Uint32 MENU_ACTION_DELAY = 100;  // Delay in milliseconds to ignore input after menu action
 
 // Menu state
 bool fileMenuOpen = false;
@@ -62,8 +62,8 @@ const int MENU_ITEM_LOAD = 3;
 std::string lastFilename = "";  // Persistent filename for both save and load dialogs
 
 // Add after other timer variables
-Uint32 dialogCloseTime = 0;  // New: Time when dialog was closed
-const Uint32 DIALOG_CLOSE_DELAY = 100;  // New: Delay in milliseconds to ignore input after dialog close
+Uint32 dialogCloseTime = 0;  // Time when dialog was closed
+const Uint32 DIALOG_CLOSE_DELAY = 100;  // Delay in milliseconds to ignore input after dialog close
 
 // Function to normalize color shift to [0, 2*PI] range
 double normalizeColorShift(double shift) {
