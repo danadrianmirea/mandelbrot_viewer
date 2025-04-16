@@ -6,18 +6,18 @@
 #include <cmath>
 #include <algorithm>
 #include "mandelbrot.hpp"
+#include "view_state.hpp"
 
 // Structure to hold zoom state for smooth transitions
 struct ZoomState {
-    double startX, startY, targetX, targetY;
-    double startZoom, targetZoom;
-    int startMaxIterations, targetMaxIterations;
-    int currentStep, totalSteps;
-    double centerX, centerY, zoom;
+    double centerX;
+    double centerY;
+    double zoom;
     int maxIterations;
 };
+std::vector<ZoomState> zoomHistory;
 
-//#define FULLSCREEN 1
+#define FULLSCREEN 1
 #define DEFAULT_MAX_ITERATIONS 100
 
 // Constants for UI
@@ -55,6 +55,12 @@ bool fileMenuOpen = false;
 const int MENU_HEIGHT = 20;
 const int MENU_ITEM_HEIGHT = 20;
 const int MENU_ITEM_PADDING = 5;
+const int MENU_ITEM_SAVE = 2;
+const int MENU_ITEM_LOAD = 3;
+
+// Add after the existing menu state variables
+std::string lastSavePath = "";
+std::string lastLoadPath = "";
 
 // Function to normalize color shift to [0, 2*PI] range
 double normalizeColorShift(double shift) {
@@ -91,15 +97,6 @@ const Uint32 ZOOM_INTERVAL = 10;  // Minimum time between zooms in milliseconds
 
 // Key states for diagonal panning
 bool keyPressed[4] = {false, false, false, false}; // up, down, left, right
-
-// Zoom history
-struct ViewState {
-    double centerX;
-    double centerY;
-    double zoom;
-    int maxIterations;
-};
-std::vector<ViewState> zoomHistory;
 
 // Function declarations
 void drawUI(SDL_Renderer* renderer, TTF_Font* font, TTF_Font* titleFont, TTF_Font* messageFont, int width, int height);
@@ -233,27 +230,67 @@ int main(int argc, char* argv[]) {
                                 // Check if File menu was clicked
                                 if (event.button.x >= 130 && event.button.x <= 170) {
                                     fileMenuOpen = !fileMenuOpen;
-                                    ignoreMouseActions = true;  // Set flag to ignore subsequent mouse actions
-                                    menuActionTime = SDL_GetTicks();  // Record time of menu action
+                                    ignoreMouseActions = true;
+                                    menuActionTime = SDL_GetTicks();
                                 }
                             } else if (fileMenuOpen) {
                                 // Check if menu items were clicked
                                 if (event.button.x >= 130 && event.button.x <= 230) {
-                                    if (event.button.y >= MENU_HEIGHT && event.button.y < MENU_HEIGHT + MENU_ITEM_HEIGHT) {
-                                        // Reset clicked
-                                        resetView(centerX, centerY, zoom, maxIterations, viewer);
+                                    int menuItem = (event.button.y - MENU_HEIGHT) / MENU_ITEM_HEIGHT;
+                                    if (menuItem >= 0 && menuItem < 4) {
+                                        switch (menuItem) {
+                                            case 0: // Reset
+                                                resetView(centerX, centerY, zoom, maxIterations, viewer);
+                                                break;
+                                            case 1: // Save
+                                                {
+                                                    ViewState state = {
+                                                        centerX, centerY, zoom, maxIterations,
+                                                        colorMode, colorShift, highQualityMode,
+                                                        highQualityMultiplier, adaptiveRenderScale,
+                                                        smoothZoomMode
+                                                    };
+                                                    if (saveViewState("fractal_view.bin", state)) {
+                                                        std::cout << "View state saved successfully" << std::endl;
+                                                    }
+                                                }
+                                                break;
+                                            case 2: // Load
+                                                {
+                                                    ViewState state;
+                                                    if (loadViewState("fractal_view.bin", state)) {
+                                                        centerX = state.centerX;
+                                                        centerY = state.centerY;
+                                                        zoom = state.zoom;
+                                                        maxIterations = state.maxIterations;
+                                                        colorMode = state.colorMode;
+                                                        colorShift = state.colorShift;
+                                                        highQualityMode = state.highQualityMode;
+                                                        highQualityMultiplier = state.highQualityMultiplier;
+                                                        adaptiveRenderScale = state.adaptiveRenderScale;
+                                                        smoothZoomMode = state.smoothZoomMode;
+                                                        
+                                                        viewer.setColorMode(colorMode);
+                                                        viewer.setColorShift(colorShift);
+                                                        viewer.setMaxIterations(highQualityMode ? 
+                                                            maxIterations * highQualityMultiplier : maxIterations);
+                                                        
+                                                        std::cout << "View state loaded successfully" << std::endl;
+                                                    }
+                                                }
+                                                break;
+                                            case 3: // Quit
+                                                running = false;
+                                                break;
+                                        }
                                         fileMenuOpen = false;
-                                        ignoreMouseActions = true;  // Set flag to ignore subsequent mouse actions
-                                        menuActionTime = SDL_GetTicks();  // Record time of menu action
-                                    } else if (event.button.y >= MENU_HEIGHT + MENU_ITEM_HEIGHT && 
-                                             event.button.y < MENU_HEIGHT + MENU_ITEM_HEIGHT * 2) {
-                                        // Quit clicked
-                                        running = false;
+                                        ignoreMouseActions = true;
+                                        menuActionTime = SDL_GetTicks();
                                     }
                                 }
                                 fileMenuOpen = false;
-                                ignoreMouseActions = true;  // Set flag to ignore subsequent mouse actions
-                                menuActionTime = SDL_GetTicks();  // Record time of menu action
+                                ignoreMouseActions = true;
+                                menuActionTime = SDL_GetTicks();
                             } else if (!ignoreMouseActions && (SDL_GetTicks() - menuActionTime > MENU_ACTION_DELAY)) {  // Check timer
                                 if (smoothZoomMode) {
                                     // In smooth zoom mode, just update current position
@@ -793,27 +830,22 @@ void drawMenu(SDL_Renderer* renderer, TTF_Font* font, int width) {
     // Draw File menu items if open
     if (fileMenuOpen) {
         SDL_SetRenderDrawColor(renderer, 240, 240, 240, 255);
-        SDL_Rect menuRect = {130, MENU_HEIGHT, 100, MENU_ITEM_HEIGHT * 2};
+        SDL_Rect menuRect = {130, MENU_HEIGHT, 100, MENU_ITEM_HEIGHT * 4};
         SDL_RenderFillRect(renderer, &menuRect);
         
         SDL_SetRenderDrawColor(renderer, 200, 200, 200, 255);
         SDL_RenderDrawRect(renderer, &menuRect);
 
-        // Draw Reset option
-        textSurface = TTF_RenderText_Solid(font, "Reset", textColor);
-        textTexture = SDL_CreateTextureFromSurface(renderer, textSurface);
-        textRect = {135, MENU_HEIGHT + 2, textSurface->w, textSurface->h};
-        SDL_RenderCopy(renderer, textTexture, NULL, &textRect);
-        SDL_FreeSurface(textSurface);
-        SDL_DestroyTexture(textTexture);
-
-        // Draw Quit option
-        textSurface = TTF_RenderText_Solid(font, "Quit", textColor);
-        textTexture = SDL_CreateTextureFromSurface(renderer, textSurface);
-        textRect = {135, MENU_HEIGHT + MENU_ITEM_HEIGHT + 2, textSurface->w, textSurface->h};
-        SDL_RenderCopy(renderer, textTexture, NULL, &textRect);
-        SDL_FreeSurface(textSurface);
-        SDL_DestroyTexture(textTexture);
+        // Draw menu items
+        const char* menuItems[] = {"Reset", "Save", "Load", "Quit"};
+        for (int i = 0; i < 4; i++) {
+            textSurface = TTF_RenderText_Solid(font, menuItems[i], textColor);
+            textTexture = SDL_CreateTextureFromSurface(renderer, textSurface);
+            textRect = {135, MENU_HEIGHT + 2 + i * MENU_ITEM_HEIGHT, textSurface->w, textSurface->h};
+            SDL_RenderCopy(renderer, textTexture, NULL, &textRect);
+            SDL_FreeSurface(textSurface);
+            SDL_DestroyTexture(textTexture);
+        }
     }
 }
 
@@ -964,7 +996,7 @@ void resetView(double& centerX, double& centerY, double& zoom, int& maxIteration
 }
 
 void saveViewToHistory(double centerX, double& centerY, double& zoom, int maxIterations) {
-    ViewState state = {centerX, centerY, zoom, maxIterations};
+    ZoomState state = {centerX, centerY, zoom, maxIterations};
     zoomHistory.push_back(state);
     
     // Limit history size
@@ -979,7 +1011,7 @@ void zoomOut(double& centerX, double& centerY, double& zoom, int& maxIterations,
         zoomHistory.pop_back();
         
         // Get previous view
-        ViewState previousView = zoomHistory.back();
+        ZoomState previousView = zoomHistory.back();
         centerX = previousView.centerX;
         centerY = previousView.centerY;
         zoom = previousView.zoom;
