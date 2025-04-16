@@ -17,12 +17,12 @@ struct ZoomState {
 };
 std::vector<ZoomState> zoomHistory;
 
-#define FULLSCREEN 1
+#define FULLSCREEN 0
 #define DEFAULT_MAX_ITERATIONS 100
 
 // Constants for UI
 const int PANEL_WIDTH = 230;
-const int PANEL_HEIGHT = 400;
+const int PANEL_HEIGHT = 450;  // Increased from 400 to accommodate all text
 const int FONT_SIZE = 12;
 const int TITLE_FONT_SIZE = 13;;
 const int MESSAGE_FONT_SIZE = 14;
@@ -110,6 +110,7 @@ void adjustQualityMultiplier(bool increase, int& highQualityMultiplier, int minQ
 void resetView(double& centerX, double& centerY, double& zoom, int& maxIterations, MandelbrotViewer& viewer);
 void saveViewToHistory(double centerX, double& centerY, double& zoom, int maxIterations);
 void zoomOut(double& centerX, double& centerY, double& zoom, int& maxIterations, MandelbrotViewer& viewer);
+bool showFileDialog(SDL_Renderer* renderer, TTF_Font* font, const std::string& title, std::string& filename);
 
 int main(int argc, char* argv[]) {
     try {
@@ -139,7 +140,7 @@ int main(int argc, char* argv[]) {
 
         // Leave some margin for taskbars and window borders
         const int margin = 100;
-#ifdef FULLSCREEN
+#if FULLSCREEN==1
         WINDOW_WIDTH = displayMode.w - margin;
         WINDOW_HEIGHT = displayMode.h - margin;
 #else
@@ -234,63 +235,78 @@ int main(int argc, char* argv[]) {
                                     menuActionTime = SDL_GetTicks();
                                 }
                             } else if (fileMenuOpen) {
-                                // Check if menu items were clicked
-                                if (event.button.x >= 130 && event.button.x <= 230) {
-                                    int menuItem = (event.button.y - MENU_HEIGHT) / MENU_ITEM_HEIGHT;
-                                    if (menuItem >= 0 && menuItem < 4) {
-                                        switch (menuItem) {
-                                            case 0: // Reset
-                                                resetView(centerX, centerY, zoom, maxIterations, viewer);
-                                                break;
-                                            case 1: // Save
-                                                {
-                                                    ViewState state = {
-                                                        centerX, centerY, zoom, maxIterations,
-                                                        colorMode, colorShift, highQualityMode,
-                                                        highQualityMultiplier, adaptiveRenderScale,
-                                                        smoothZoomMode
-                                                    };
-                                                    if (saveViewState("fractal_view.bin", state)) {
-                                                        std::cout << "View state saved successfully" << std::endl;
+                                // Check if click is outside menu area
+                                if (event.button.y < MENU_HEIGHT || 
+                                    event.button.x < 130 || 
+                                    event.button.x > 230 || 
+                                    event.button.y > MENU_HEIGHT + MENU_ITEM_HEIGHT * 4) {
+                                    fileMenuOpen = false;
+                                } else if (event.button.y >= MENU_HEIGHT && event.button.y < MENU_HEIGHT + MENU_ITEM_HEIGHT * 4) {
+                                    // Check if menu items were clicked
+                                    if (event.button.x >= 130 && event.button.x <= 230) {
+                                        int menuItem = (event.button.y - MENU_HEIGHT) / MENU_ITEM_HEIGHT;
+                                        if (menuItem >= 0 && menuItem < 4) {
+                                            // Close menu before handling any menu item
+                                            fileMenuOpen = false;
+                                            ignoreMouseActions = true;
+                                            menuActionTime = SDL_GetTicks();
+                                            
+                                            switch (menuItem) {
+                                                case 0: // Reset
+                                                    resetView(centerX, centerY, zoom, maxIterations, viewer);
+                                                    break;
+                                                case 1: // Save
+                                                    {
+                                                        std::string filename = lastSavePath;
+                                                        if (showFileDialog(renderer, font, "Enter filename to save:", filename)) {
+                                                            lastSavePath = filename;
+                                                            ViewState state = {
+                                                                centerX, centerY, zoom, maxIterations,
+                                                                colorMode, colorShift, highQualityMode,
+                                                                highQualityMultiplier, adaptiveRenderScale,
+                                                                smoothZoomMode
+                                                            };
+                                                            if (saveViewState(filename.c_str(), state)) {
+                                                                std::cout << "View state saved successfully" << std::endl;
+                                                            }
+                                                        }
                                                     }
-                                                }
-                                                break;
-                                            case 2: // Load
-                                                {
-                                                    ViewState state;
-                                                    if (loadViewState("fractal_view.bin", state)) {
-                                                        centerX = state.centerX;
-                                                        centerY = state.centerY;
-                                                        zoom = state.zoom;
-                                                        maxIterations = state.maxIterations;
-                                                        colorMode = state.colorMode;
-                                                        colorShift = state.colorShift;
-                                                        highQualityMode = state.highQualityMode;
-                                                        highQualityMultiplier = state.highQualityMultiplier;
-                                                        adaptiveRenderScale = state.adaptiveRenderScale;
-                                                        smoothZoomMode = state.smoothZoomMode;
-                                                        
-                                                        viewer.setColorMode(colorMode);
-                                                        viewer.setColorShift(colorShift);
-                                                        viewer.setMaxIterations(highQualityMode ? 
-                                                            maxIterations * highQualityMultiplier : maxIterations);
-                                                        
-                                                        std::cout << "View state loaded successfully" << std::endl;
+                                                    break;
+                                                case 2: // Load
+                                                    {
+                                                        std::string filename = lastLoadPath;
+                                                        if (showFileDialog(renderer, font, "Enter filename to load:", filename)) {
+                                                            lastLoadPath = filename;
+                                                            ViewState state;
+                                                            if (loadViewState(filename.c_str(), state)) {
+                                                                centerX = state.centerX;
+                                                                centerY = state.centerY;
+                                                                zoom = state.zoom;
+                                                                maxIterations = state.maxIterations;
+                                                                colorMode = state.colorMode;
+                                                                colorShift = state.colorShift;
+                                                                highQualityMode = state.highQualityMode;
+                                                                highQualityMultiplier = state.highQualityMultiplier;
+                                                                adaptiveRenderScale = state.adaptiveRenderScale;
+                                                                smoothZoomMode = state.smoothZoomMode;
+                                                                
+                                                                viewer.setColorMode(colorMode);
+                                                                viewer.setColorShift(colorShift);
+                                                                viewer.setMaxIterations(highQualityMode ? 
+                                                                    maxIterations * highQualityMultiplier : maxIterations);
+                                                                
+                                                                std::cout << "View state loaded successfully" << std::endl;
+                                                            }
+                                                        }
                                                     }
-                                                }
-                                                break;
-                                            case 3: // Quit
-                                                running = false;
-                                                break;
+                                                    break;
+                                                case 3: // Quit
+                                                    running = false;
+                                                    break;
+                                            }
                                         }
-                                        fileMenuOpen = false;
-                                        ignoreMouseActions = true;
-                                        menuActionTime = SDL_GetTicks();
                                     }
                                 }
-                                fileMenuOpen = false;
-                                ignoreMouseActions = true;
-                                menuActionTime = SDL_GetTicks();
                             } else if (!ignoreMouseActions && (SDL_GetTicks() - menuActionTime > MENU_ACTION_DELAY)) {  // Check timer
                                 if (smoothZoomMode) {
                                     // In smooth zoom mode, just update current position
@@ -393,6 +409,10 @@ int main(int argc, char* argv[]) {
                         break;
 
                     case SDL_KEYDOWN:
+                        // Ignore key events when file dialog is open
+                        if (fileMenuOpen) {
+                            break;
+                        }
                         switch (event.key.keysym.sym) {
                             case SDLK_c:
                                 colorMode = (colorMode + 1) % 6;
@@ -472,7 +492,6 @@ int main(int argc, char* argv[]) {
                                 zoomOut(centerX, centerY, zoom, maxIterations, viewer);
                                 break;
                             case SDLK_ESCAPE:
-                                running = false;
                                 break;
                             case SDLK_w:
                                 keyPressed[0] = true; // up
@@ -548,6 +567,15 @@ int main(int argc, char* argv[]) {
                         
                         // Check if any direction keys are still pressed
                         isPanning = keyPressed[0] || keyPressed[1] || keyPressed[2] || keyPressed[3];
+                        break;
+
+                    case SDL_WINDOWEVENT:
+                        switch (event.window.event) {
+                            case SDL_WINDOWEVENT_FOCUS_LOST:
+                                // Close menu when window loses focus
+                                fileMenuOpen = false;
+                                break;
+                        }
                         break;
                 }
             }
@@ -625,7 +653,7 @@ int main(int argc, char* argv[]) {
             
             SDL_Rect messageRect;
             messageRect.x = (WINDOW_WIDTH - messageSurface->w) / 2;
-            messageRect.y = 10;
+            messageRect.y = 30;
             messageRect.w = messageSurface->w;
             messageRect.h = messageSurface->h;
             
@@ -677,14 +705,14 @@ void drawUI(SDL_Renderer* renderer, TTF_Font* font, TTF_Font* titleFont, TTF_Fon
     SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_BLEND);
     
     // Left panel (Help)
-    SDL_Rect leftPanel = {10, height - PANEL_HEIGHT - 10, PANEL_WIDTH, PANEL_HEIGHT};
+    SDL_Rect leftPanel = {10, height - PANEL_HEIGHT - 60, PANEL_WIDTH, PANEL_HEIGHT};
     SDL_SetRenderDrawColor(renderer, 20, 20, 40, 200);
     SDL_RenderFillRect(renderer, &leftPanel);
     SDL_SetRenderDrawColor(renderer, 100, 100, 150, 255);
     SDL_RenderDrawRect(renderer, &leftPanel);
     
     // Right panel (Settings)
-    SDL_Rect rightPanel = {width - PANEL_WIDTH - 10, height - PANEL_HEIGHT - 10, PANEL_WIDTH, PANEL_HEIGHT};
+    SDL_Rect rightPanel = {width - PANEL_WIDTH - 10, height - PANEL_HEIGHT - 60, PANEL_WIDTH, PANEL_HEIGHT};
     SDL_SetRenderDrawColor(renderer, 20, 20, 40, 200);
     SDL_RenderFillRect(renderer, &rightPanel);
     SDL_SetRenderDrawColor(renderer, 100, 100, 150, 255);
@@ -697,6 +725,7 @@ void drawUI(SDL_Renderer* renderer, TTF_Font* font, TTF_Font* titleFont, TTF_Fon
     
     std::vector<std::string> helpTexts = {
         "Controls:",
+        " ",  // Added empty line for spacing
         "M: Toggle zoom mode (smooth/selection)",
         smoothZoomMode ? "Zoom Mode: Smooth" : "Zoom Mode: Rectangle Selection",
         "In Smooth Zoom Mode:",
@@ -724,7 +753,6 @@ void drawUI(SDL_Renderer* renderer, TTF_Font* font, TTF_Font* titleFont, TTF_Fon
         "P: Print current settings",
         "Backspace: Zoom out",
         "H: Toggle help panels",
-        "ESC: Exit"
     };
     
     // Settings text
@@ -736,6 +764,7 @@ void drawUI(SDL_Renderer* renderer, TTF_Font* font, TTF_Font* titleFont, TTF_Fon
     
     std::vector<std::string> settingsTexts = {
         "Current Settings:",
+        " ",  // Added empty line for spacing
         "Center: (" + std::to_string(centerX) + ", " + std::to_string(centerY) + ")",
         "Zoom: " + std::to_string(zoom),
         "Iterations: " + std::to_string(effectiveMaxIter) + " (" + qualityText + ")",
@@ -749,7 +778,7 @@ void drawUI(SDL_Renderer* renderer, TTF_Font* font, TTF_Font* titleFont, TTF_Fon
     }
     
     // Draw help text
-    int yOffset = height - PANEL_HEIGHT + 5;
+    int yOffset = height - PANEL_HEIGHT - 55;  // Adjusted to match new panel position
     for (size_t i = 0; i < helpTexts.size(); i++) {
         SDL_Surface* textSurface;
         if (i == 0) {
@@ -775,7 +804,7 @@ void drawUI(SDL_Renderer* renderer, TTF_Font* font, TTF_Font* titleFont, TTF_Fon
     }
     
     // Draw settings text
-    yOffset = height - PANEL_HEIGHT + 5;
+    yOffset = height - PANEL_HEIGHT - 55;  // Adjusted to match new panel position
     for (size_t i = 0; i < settingsTexts.size(); i++) {
         SDL_Surface* textSurface;
         if (i == 0) {
@@ -1024,4 +1053,116 @@ void zoomOut(double& centerX, double& centerY, double& zoom, int& maxIterations,
     } else {
         std::cout << "No more zoom history available" << std::endl;
     }
+}
+
+// Function to show a popup dialog for file operations
+bool showFileDialog(SDL_Renderer* renderer, TTF_Font* font, const std::string& title, std::string& filename) {
+    const int DIALOG_WIDTH = 400;
+    const int DIALOG_HEIGHT = 150;
+    const int DIALOG_X = (WINDOW_WIDTH - DIALOG_WIDTH) / 2;
+    const int DIALOG_Y = (WINDOW_HEIGHT - DIALOG_HEIGHT) / 2;
+    
+    bool done = false;
+    bool result = false;
+    std::string inputText = filename.empty() ? "": filename;
+    
+    while (!done) {
+        SDL_Event event;
+        while (SDL_PollEvent(&event)) {
+            switch (event.type) {
+                case SDL_QUIT:
+                    done = true;
+                    break;
+                    
+                case SDL_KEYDOWN:
+                    if (event.key.keysym.sym == SDLK_RETURN) {
+                        filename = inputText;
+                        result = true;
+                        done = true;
+                    } else if (event.key.keysym.sym == SDLK_ESCAPE) {
+                        done = true;
+                    } else if (event.key.keysym.sym == SDLK_BACKSPACE && !inputText.empty()) {
+                        inputText.pop_back();
+                    } else if (event.key.keysym.sym == SDLK_c && (event.key.keysym.mod & KMOD_CTRL)) {
+                        SDL_SetClipboardText(inputText.c_str());
+                    } else if (event.key.keysym.sym == SDLK_v && (event.key.keysym.mod & KMOD_CTRL)) {
+                        char* clipboardText = SDL_GetClipboardText();
+                        if (clipboardText) {
+                            inputText += clipboardText;
+                            SDL_free(clipboardText);
+                        }
+                    }
+                    break;
+                    
+                case SDL_TEXTINPUT:
+                    inputText += event.text.text;
+                    break;
+            }
+        }
+        
+        // Draw dialog background
+        SDL_SetRenderDrawColor(renderer, 50, 50, 50, 255);
+        SDL_Rect dialogRect = {DIALOG_X, DIALOG_Y, DIALOG_WIDTH, DIALOG_HEIGHT};
+        SDL_RenderFillRect(renderer, &dialogRect);
+        
+        // Draw dialog border
+        SDL_SetRenderDrawColor(renderer, 200, 200, 200, 255);
+        SDL_RenderDrawRect(renderer, &dialogRect);
+        
+        // Draw title
+        SDL_Color textColor = {255, 255, 255, 255};
+        SDL_Surface* titleSurface = TTF_RenderText_Solid(font, title.c_str(), textColor);
+        if (!titleSurface) {
+            std::cerr << "Failed to render title text: " << TTF_GetError() << std::endl;
+            // Use a default text if rendering fails
+            titleSurface = TTF_RenderText_Solid(font, "Error rendering title", textColor);
+            if (!titleSurface) {
+                std::cerr << "Critical error: Cannot render any text" << std::endl;
+                return false;
+            }
+        }
+        SDL_Texture* titleTexture = SDL_CreateTextureFromSurface(renderer, titleSurface);
+        SDL_Rect titleRect = {DIALOG_X + 10, DIALOG_Y + 10, titleSurface->w, titleSurface->h};
+        SDL_RenderCopy(renderer, titleTexture, nullptr, &titleRect);
+        SDL_FreeSurface(titleSurface);
+        SDL_DestroyTexture(titleTexture);
+        
+        // Draw input text background (textbox)
+        SDL_SetRenderDrawColor(renderer, 100, 100, 100, 255);
+        SDL_Rect inputBoxRect = {DIALOG_X + 10, DIALOG_Y + 45, DIALOG_WIDTH - 20, 25};
+        SDL_RenderFillRect(renderer, &inputBoxRect);
+        
+        // Draw input text
+        SDL_Surface* inputSurface = TTF_RenderText_Solid(font, inputText.c_str(), textColor);
+        if(inputSurface)
+        {
+            SDL_Texture* inputTexture = SDL_CreateTextureFromSurface(renderer, inputSurface);
+            SDL_Rect inputRect = {DIALOG_X + 15, DIALOG_Y + 50, inputSurface->w, inputSurface->h};
+            SDL_RenderCopy(renderer, inputTexture, nullptr, &inputRect);
+            SDL_FreeSurface(inputSurface);
+            SDL_DestroyTexture(inputTexture);
+        }
+        
+        // Draw instructions
+        const char* instructions = "Press Enter to confirm, Esc to cancel";
+        SDL_Surface* instrSurface = TTF_RenderText_Solid(font, instructions, textColor);
+        if (!instrSurface) {
+            std::cerr << "Failed to render instructions text: " << TTF_GetError() << std::endl;
+            // Use a default text if rendering fails
+            instrSurface = TTF_RenderText_Solid(font, "Error rendering instructions", textColor);
+            if (!instrSurface) {
+                std::cerr << "Critical error: Cannot render any text" << std::endl;
+                return false;
+            }
+        }
+        SDL_Texture* instrTexture = SDL_CreateTextureFromSurface(renderer, instrSurface);
+        SDL_Rect instrRect = {DIALOG_X + 10, DIALOG_Y + 100, instrSurface->w, instrSurface->h};
+        SDL_RenderCopy(renderer, instrTexture, nullptr, &instrRect);
+        SDL_FreeSurface(instrSurface);
+        SDL_DestroyTexture(instrTexture);
+        
+        SDL_RenderPresent(renderer);
+    }
+    
+    return result;
 }

@@ -71,7 +71,6 @@ cmake --build .
 - P: Print current settings
 - R: Reset view
 - V: Toggle debug mode
-- ESC: Close the window
 
 ## Color Palettes
 
