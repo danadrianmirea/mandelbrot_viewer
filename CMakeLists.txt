@@ -17,6 +17,11 @@ set(SDL2_TTF_ROOT "D:/SDL2_ttf-2.20.2" CACHE PATH "SDL2_ttf root directory")
 set(SDL2_TTF_INCLUDE_DIR "${SDL2_TTF_ROOT}/include")
 set(SDL2_TTF_LIBRARY_DIR "${SDL2_TTF_ROOT}/lib/x64")
 
+# Set SDL2_image paths explicitly
+set(SDL2_IMAGE_ROOT "D:/SDL2_image-2.8.2" CACHE PATH "SDL2_image root directory")
+set(SDL2_IMAGE_INCLUDE_DIR "${SDL2_IMAGE_ROOT}/include")
+set(SDL2_IMAGE_LIBRARY_DIR "${SDL2_IMAGE_ROOT}/lib/x64")
+
 # Find OpenCL package
 find_package(OpenCL)
 if(NOT OpenCL_FOUND)
@@ -40,6 +45,7 @@ target_include_directories(${PROJECT_NAME}
     ${OpenCL_INCLUDE_DIRS}
     ${SDL2_INCLUDE_DIR}
     ${SDL2_TTF_INCLUDE_DIR}
+    ${SDL2_IMAGE_INCLUDE_DIR}
 )
 
 # Link directories
@@ -47,6 +53,7 @@ target_link_directories(${PROJECT_NAME}
     PRIVATE
     ${SDL2_LIBRARY_DIR}
     ${SDL2_TTF_LIBRARY_DIR}
+    ${SDL2_IMAGE_LIBRARY_DIR}
     ${OpenCL_LIBRARIES}
 )
 
@@ -57,6 +64,7 @@ target_link_libraries(${PROJECT_NAME}
     SDL2main
     SDL2
     SDL2_ttf
+    SDL2_image
 )
 
 # Set output directories
@@ -74,6 +82,9 @@ if(WIN32)
             $<TARGET_FILE_DIR:${PROJECT_NAME}>
         COMMAND ${CMAKE_COMMAND} -E copy_if_different
             "${SDL2_TTF_ROOT}/lib/x64/SDL2_ttf.dll"
+            $<TARGET_FILE_DIR:${PROJECT_NAME}>
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            "${SDL2_IMAGE_ROOT}/lib/x64/SDL2_image.dll"
             $<TARGET_FILE_DIR:${PROJECT_NAME}>
     )
     

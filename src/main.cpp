@@ -1,5 +1,6 @@
 #include <SDL2/SDL.h>
 #include <SDL2/SDL_ttf.h>
+#include <SDL2/SDL_image.h>
 #include <iostream>
 #include <string>
 #include <vector>
@@ -75,6 +76,17 @@ int pendingMenuItem = -1;   // Store which menu item was clicked
 Uint32 popupDelayTime = 0;  // Time when menu was closed and popup should be shown
 const Uint32 POPUP_DELAY = 100;  // Delay in milliseconds before showing popup
 
+// Add after other constants near the top
+const int RENDER_WIDTH = 1920;
+const int RENDER_HEIGHT = 1080;
+
+// Add after other menu state variables
+bool renderMenuOpen = false;
+std::string lastRenderFilename = "render.png";  // Default render filename
+
+// Add after other menu item constants
+const int MENU_ITEM_RENDER = 5;  // New constant for render menu item
+
 // Function to normalize color shift to [0, 2*PI] range
 double normalizeColorShift(double shift) {
     while (shift < MIN_COLOR_SHIFT) shift += MAX_COLOR_SHIFT;
@@ -125,6 +137,9 @@ void saveViewToHistory(double centerX, double& centerY, double& zoom, int maxIte
 void zoomOut(double& centerX, double& centerY, double& zoom, int& maxIterations, MandelbrotViewer& viewer);
 bool showFileDialog(SDL_Renderer* renderer, TTF_Font* font, const std::string& title, std::string& filename);
 std::string findFontPath(const std::string& fontName);
+bool renderHighResImage(const std::string& filename, SDL_Renderer* renderer, 
+                       double centerX, double centerY, double zoom, 
+                       int maxIterations, int colorMode, double colorShift);
 
 int main(int argc, char* argv[]) {
     try {
@@ -139,6 +154,14 @@ int main(int argc, char* argv[]) {
         // Initialize SDL_ttf
         if (TTF_Init() < 0) {
             std::cerr << "SDL_ttf initialization failed: " << TTF_GetError() << std::endl;
+            SDL_Quit();
+            return 1;
+        }
+
+        // Initialize SDL_image
+        if (!(IMG_Init(IMG_INIT_PNG) & IMG_INIT_PNG)) {
+            std::cerr << "SDL_image initialization failed: " << IMG_GetError() << std::endl;
+            TTF_Quit();
             SDL_Quit();
             return 1;
         }
@@ -267,6 +290,14 @@ int main(int argc, char* argv[]) {
                                     ignoreMouseActions = true;
                                     menuActionTime = SDL_GetTicks();
                                 }
+                                // Check if Render menu was clicked
+                                else if (event.button.x >= 240 && event.button.x <= 300) {
+                                    renderMenuOpen = !renderMenuOpen;
+                                    fileMenuOpen = false;  // Close other menus
+                                    viewMenuOpen = false;
+                                    ignoreMouseActions = true;
+                                    menuActionTime = SDL_GetTicks();
+                                }
                             } else if (fileMenuOpen) {
                                 // Check if click is outside menu area
                                 if (event.button.y < MENU_HEIGHT || 
@@ -308,6 +339,25 @@ int main(int argc, char* argv[]) {
 
                                         // Store the resize action
                                         pendingMenuItem = 4;  // Use 4 for View menu actions
+                                    }
+                                }
+                            } else if (renderMenuOpen) {
+                                // Check if click is outside menu area
+                                if (event.button.y < MENU_HEIGHT || 
+                                    event.button.x < 240 || 
+                                    event.button.x > 340 || 
+                                    event.button.y > MENU_HEIGHT + MENU_ITEM_HEIGHT) {
+                                    renderMenuOpen = false;
+                                    dialogCloseTime = SDL_GetTicks();
+                                } else if (event.button.y >= MENU_HEIGHT && 
+                                         event.button.y < MENU_HEIGHT + MENU_ITEM_HEIGHT) {
+                                    // Image menu item clicked
+                                    if (event.button.x >= 240 && event.button.x <= 340) {
+                                        pendingMenuItem = MENU_ITEM_RENDER;
+                                        renderMenuOpen = false;
+                                        ignoreMouseActions = true;
+                                        menuActionTime = SDL_GetTicks();
+                                        popupDelayTime = SDL_GetTicks();
                                     }
                                 }
                             } else if (!ignoreMouseActions && (SDL_GetTicks() - menuActionTime > MENU_ACTION_DELAY) && 
@@ -416,7 +466,7 @@ int main(int argc, char* argv[]) {
 
                     case SDL_KEYDOWN:
                         // Ignore key events when file dialog is open
-                        if (fileMenuOpen || viewMenuOpen) {
+                        if (fileMenuOpen || viewMenuOpen || renderMenuOpen) {
                             break;
                         }
                         switch (event.key.keysym.sym) {
@@ -581,6 +631,7 @@ int main(int argc, char* argv[]) {
                                 // Close menu when window loses focus
                                 fileMenuOpen = false;
                                 viewMenuOpen = false;
+                                renderMenuOpen = false;
                                 break;
                         }
                         break;
@@ -686,6 +737,18 @@ int main(int argc, char* argv[]) {
                             
                             // Update viewer size
                             viewer.resize(WINDOW_WIDTH, WINDOW_HEIGHT);
+                        }
+                        break;
+                    case MENU_ITEM_RENDER: // Render Image
+                        {
+                            std::string filename = lastRenderFilename;
+                            if (showFileDialog(renderer, font, "Enter filename to save render:", filename)) {
+                                lastRenderFilename = filename;
+                                if (renderHighResImage(filename, renderer, centerX, centerY, zoom, 
+                                                     maxIterations, colorMode, colorShift)) {
+                                    std::cout << "High resolution image saved successfully" << std::endl;
+                                }
+                            }
                         }
                         break;
                 }
@@ -802,6 +865,7 @@ int main(int argc, char* argv[]) {
         SDL_DestroyWindow(window);
         TTF_Quit();
         SDL_Quit();
+        IMG_Quit();  // Cleanup SDL_image
 
         return 0;
     }
@@ -980,6 +1044,18 @@ void drawMenu(SDL_Renderer* renderer, TTF_Font* font, int width) {
     SDL_FreeSurface(textSurface);
     SDL_DestroyTexture(textTexture);
 
+    // Draw Render menu
+    SDL_Rect renderMenuRect = {240, 0, 60, MENU_HEIGHT};
+    SDL_RenderDrawRect(renderer, &renderMenuRect);
+    
+    // Draw Render text
+    textSurface = TTF_RenderText_Solid(font, "Render", textColor);
+    textTexture = SDL_CreateTextureFromSurface(renderer, textSurface);
+    textRect = {245, 2, textSurface->w, textSurface->h};
+    SDL_RenderCopy(renderer, textTexture, NULL, &textRect);
+    SDL_FreeSurface(textSurface);
+    SDL_DestroyTexture(textTexture);
+
     // Draw File menu items if open
     if (fileMenuOpen) {
         SDL_SetRenderDrawColor(renderer, 240, 240, 240, 255);
@@ -1015,6 +1091,24 @@ void drawMenu(SDL_Renderer* renderer, TTF_Font* font, int width) {
         textSurface = TTF_RenderText_Solid(font, menuText, textColor);
         textTexture = SDL_CreateTextureFromSurface(renderer, textSurface);
         textRect = {185, MENU_HEIGHT + 2, textSurface->w, textSurface->h};
+        SDL_RenderCopy(renderer, textTexture, NULL, &textRect);
+        SDL_FreeSurface(textSurface);
+        SDL_DestroyTexture(textTexture);
+    }
+
+    // Draw Render menu items if open
+    if (renderMenuOpen) {
+        SDL_SetRenderDrawColor(renderer, 240, 240, 240, 255);
+        SDL_Rect menuRect = {240, MENU_HEIGHT, 100, MENU_ITEM_HEIGHT};
+        SDL_RenderFillRect(renderer, &menuRect);
+        
+        SDL_SetRenderDrawColor(renderer, 200, 200, 200, 255);
+        SDL_RenderDrawRect(renderer, &menuRect);
+
+        // Draw Image text
+        textSurface = TTF_RenderText_Solid(font, "Image", textColor);
+        textTexture = SDL_CreateTextureFromSurface(renderer, textSurface);
+        textRect = {245, MENU_HEIGHT + 2, textSurface->w, textSurface->h};
         SDL_RenderCopy(renderer, textTexture, NULL, &textRect);
         SDL_FreeSurface(textSurface);
         SDL_DestroyTexture(textTexture);
@@ -1397,4 +1491,60 @@ std::string findFontPath(const std::string& fontName) {
         std::cerr << "  - " << path << std::endl;
     }
     return "";
+}
+
+bool renderHighResImage(const std::string& filename, SDL_Renderer* renderer,
+                       double centerX, double centerY, double zoom,
+                       int maxIterations, int colorMode, double colorShift) {
+    // Create a temporary high-resolution viewer with the exact same parameters
+    int effectiveMaxIter = highQualityMode ? maxIterations * highQualityMultiplier : maxIterations;
+    MandelbrotViewer highResViewer(RENDER_WIDTH, RENDER_HEIGHT, effectiveMaxIter, colorMode, colorShift);
+    
+    // Use the same quality settings as the main viewer
+    if (highQualityMode) {
+        highResViewer.setMaxIterations(effectiveMaxIter);
+    }
+    
+    // Compute the high-resolution frame
+    highResViewer.computeFrame(centerX, centerY, zoom);
+    
+    // Get the image data
+    const std::vector<unsigned char>& imageData = highResViewer.getImageData();
+    if (imageData.empty()) {
+        std::cerr << "Error: Failed to generate high-resolution image data" << std::endl;
+        return false;
+    }
+
+    // Create an SDL surface from the image data
+    SDL_Surface* surface = SDL_CreateRGBSurface(0, RENDER_WIDTH, RENDER_HEIGHT, 24,
+        0x0000FF, 0x00FF00, 0xFF0000, 0);
+    if (!surface) {
+        std::cerr << "Error creating surface: " << SDL_GetError() << std::endl;
+        return false;
+    }
+
+    // Copy the image data to the surface
+    memcpy(surface->pixels, imageData.data(), RENDER_WIDTH * RENDER_HEIGHT * 3);
+
+    // Save the surface as PNG
+    if (IMG_SavePNG(surface, filename.c_str()) != 0) {
+        std::cerr << "Error saving PNG: " << IMG_GetError() << std::endl;
+        SDL_FreeSurface(surface);
+        return false;
+    }
+
+    SDL_FreeSurface(surface);
+    std::cout << "Successfully rendered high-resolution image to: " << filename << std::endl;
+    std::cout << "Render parameters:" << std::endl;
+    std::cout << "  Resolution: " << RENDER_WIDTH << "x" << RENDER_HEIGHT << std::endl;
+    std::cout << "  Center: (" << centerX << ", " << centerY << ")" << std::endl;
+    std::cout << "  Zoom: " << zoom << std::endl;
+    std::cout << "  Iterations: " << effectiveMaxIter << std::endl;
+    std::cout << "  Color mode: " << colorMode << std::endl;
+    std::cout << "  Color shift: " << colorShift << std::endl;
+    std::cout << "  Quality mode: " << (highQualityMode ? "High" : "Standard") << std::endl;
+    if (highQualityMode) {
+        std::cout << "  Quality multiplier: " << highQualityMultiplier << "x" << std::endl;
+    }
+    return true;
 }
