@@ -120,10 +120,15 @@ const std::string MandelbrotViewer::kernelSource = R"(
     }
 )";
 
-MandelbrotViewer::MandelbrotViewer(int w, int h, int maxIter, int colorMode, int colorShift)
-    : width(w), height(h), maxIterations(maxIter), colorMode(colorMode), colorShift(colorShift)
+MandelbrotViewer::MandelbrotViewer(int w, int h, int maxIter, int colorMode, double colorShift)
+    : width(w), height(h), maxIterations(maxIter), colorMode(colorMode)
 {
     std::cout << "Initializing MandelbrotViewer with size " << width << "x" << height << std::endl;
+    
+    // Normalize the color shift value
+    while (colorShift < 0.0) colorShift += 6.28;
+    while (colorShift >= 6.28) colorShift -= 6.28;
+    this->colorShift = colorShift;
     
     imageData.resize(width * height * 3);
     iterations.resize(width * height);
@@ -245,6 +250,20 @@ void MandelbrotViewer::compileKernel() {
 
     kernel = clCreateKernel(program, "mandelbrot", &err);
     if (err != CL_SUCCESS) throw std::runtime_error("Failed to create kernel");
+
+    // Set all kernel arguments immediately after creating the kernel
+    if ((err = clSetKernelArg(kernel, 0, sizeof(cl_mem), &iterationsBuffer)) != CL_SUCCESS ||
+        (err = clSetKernelArg(kernel, 1, sizeof(cl_mem), &rgbBuffer)) != CL_SUCCESS ||
+        (err = clSetKernelArg(kernel, 2, sizeof(cl_mem), &xArrayBuffer)) != CL_SUCCESS ||
+        (err = clSetKernelArg(kernel, 3, sizeof(cl_mem), &yArrayBuffer)) != CL_SUCCESS ||
+        (err = clSetKernelArg(kernel, 4, sizeof(int), &width)) != CL_SUCCESS ||
+        (err = clSetKernelArg(kernel, 5, sizeof(int), &height)) != CL_SUCCESS ||
+        (err = clSetKernelArg(kernel, 6, sizeof(int), &maxIterations)) != CL_SUCCESS ||
+        (err = clSetKernelArg(kernel, 7, sizeof(int), &colorMode)) != CL_SUCCESS ||
+        (err = clSetKernelArg(kernel, 8, sizeof(double), &colorShift)) != CL_SUCCESS) {
+        std::cerr << "Failed to set initial kernel arguments. Error code: " << err << std::endl;
+        throw std::runtime_error("Failed to set initial kernel arguments");
+    }
 }
 
 void MandelbrotViewer::computeFrame(double centerX, double centerY, double zoom) {
@@ -276,15 +295,9 @@ void MandelbrotViewer::computeFrame(double centerX, double centerY, double zoom)
             throw std::runtime_error("Failed to write Y array");
         }
 
-        // Set kernel arguments with error checking
+        // Update only the arguments that can change during runtime
         cl_int argErr;
-        if ((argErr = clSetKernelArg(kernel, 0, sizeof(cl_mem), &iterationsBuffer)) != CL_SUCCESS ||
-            (argErr = clSetKernelArg(kernel, 1, sizeof(cl_mem), &rgbBuffer)) != CL_SUCCESS ||
-            (argErr = clSetKernelArg(kernel, 2, sizeof(cl_mem), &xArrayBuffer)) != CL_SUCCESS ||
-            (argErr = clSetKernelArg(kernel, 3, sizeof(cl_mem), &yArrayBuffer)) != CL_SUCCESS ||
-            (argErr = clSetKernelArg(kernel, 4, sizeof(int), &width)) != CL_SUCCESS ||
-            (argErr = clSetKernelArg(kernel, 5, sizeof(int), &height)) != CL_SUCCESS ||
-            (argErr = clSetKernelArg(kernel, 6, sizeof(int), &maxIterations)) != CL_SUCCESS ||
+        if ((argErr = clSetKernelArg(kernel, 6, sizeof(int), &maxIterations)) != CL_SUCCESS ||
             (argErr = clSetKernelArg(kernel, 7, sizeof(int), &colorMode)) != CL_SUCCESS ||
             (argErr = clSetKernelArg(kernel, 8, sizeof(double), &colorShift)) != CL_SUCCESS) {
             std::cerr << "Failed to set kernel argument. Error code: " << argErr << std::endl;

@@ -27,6 +27,11 @@ const int FONT_SIZE = 12;
 const int TITLE_FONT_SIZE = 13;;
 const int MESSAGE_FONT_SIZE = 14;
 
+// Color shift constants
+const double MIN_COLOR_SHIFT = 0.0;
+const double MAX_COLOR_SHIFT = 6.28; // 2 * PI for full color cycle
+const double DEFAULT_COLOR_SHIFT = 1.8; // Adjusted for better fire theme appearance
+
 // Window dimensions (will be set in main)
 int WINDOW_WIDTH;
 int WINDOW_HEIGHT;
@@ -40,13 +45,30 @@ bool smoothZoomMode = true;
 bool isDragging = false;
 bool isPanning = false;
 bool drawing = false;
+bool showMenu = true;  // New: Menu visibility state
+bool ignoreMouseActions = false;  // New: Flag to ignore mouse actions after menu interaction
+Uint32 menuActionTime = 0;  // New: Time when last menu action occurred
+const Uint32 MENU_ACTION_DELAY = 100;  // New: Delay in milliseconds to ignore input after menu action
+
+// Menu state
+bool fileMenuOpen = false;
+const int MENU_HEIGHT = 20;
+const int MENU_ITEM_HEIGHT = 20;
+const int MENU_ITEM_PADDING = 5;
+
+// Function to normalize color shift to [0, 2*PI] range
+double normalizeColorShift(double shift) {
+    while (shift < MIN_COLOR_SHIFT) shift += MAX_COLOR_SHIFT;
+    while (shift >= MAX_COLOR_SHIFT) shift -= MAX_COLOR_SHIFT;
+    return shift;
+}
 
 // View parameters
 double centerX = -0.5;
 double centerY = 0.0;
 double zoom = 1.5;
-int colorMode = 0;
-double colorShift = 3.2;
+int colorMode = 1; // Changed from 0 to 1 for Fire theme
+double colorShift = DEFAULT_COLOR_SHIFT;
 int maxIterations = DEFAULT_MAX_ITERATIONS;
 int highQualityMultiplier = 4;
 int minQualityMultiplier = 1;
@@ -81,6 +103,7 @@ std::vector<ViewState> zoomHistory;
 
 // Function declarations
 void drawUI(SDL_Renderer* renderer, TTF_Font* font, TTF_Font* titleFont, TTF_Font* messageFont, int width, int height);
+void drawMenu(SDL_Renderer* renderer, TTF_Font* font, int width);
 void drawSelectionRectangle(SDL_Renderer* renderer, int startX, int startY, int currentX, int currentY);
 void zoomToSelection(int startX, int startY, int currentX, int currentY, double& centerX, double& centerY, double& zoom);
 void smoothZoomToCursor(bool zoomOut, int mouseX, int mouseY, double& centerX, double& centerY, double& zoom);
@@ -206,61 +229,108 @@ int main(int argc, char* argv[]) {
 
                     case SDL_MOUSEBUTTONDOWN:
                         if (event.button.button == SDL_BUTTON_LEFT) {
-                            if (!smoothZoomMode) {
-                                // Start drawing selection rectangle
-                                drawing = true;
-                                startX = event.button.x;
-                                startY = event.button.y;
-                                currentX = startX;
-                                currentY = startY;
+                            if (showMenu && event.button.y < MENU_HEIGHT) {
+                                // Check if File menu was clicked
+                                if (event.button.x >= 130 && event.button.x <= 170) {
+                                    fileMenuOpen = !fileMenuOpen;
+                                    ignoreMouseActions = true;  // Set flag to ignore subsequent mouse actions
+                                    menuActionTime = SDL_GetTicks();  // Record time of menu action
+                                }
+                            } else if (fileMenuOpen) {
+                                // Check if menu items were clicked
+                                if (event.button.x >= 130 && event.button.x <= 230) {
+                                    if (event.button.y >= MENU_HEIGHT && event.button.y < MENU_HEIGHT + MENU_ITEM_HEIGHT) {
+                                        // Reset clicked
+                                        resetView(centerX, centerY, zoom, maxIterations, viewer);
+                                        fileMenuOpen = false;
+                                        ignoreMouseActions = true;  // Set flag to ignore subsequent mouse actions
+                                        menuActionTime = SDL_GetTicks();  // Record time of menu action
+                                    } else if (event.button.y >= MENU_HEIGHT + MENU_ITEM_HEIGHT && 
+                                             event.button.y < MENU_HEIGHT + MENU_ITEM_HEIGHT * 2) {
+                                        // Quit clicked
+                                        running = false;
+                                    }
+                                }
+                                fileMenuOpen = false;
+                                ignoreMouseActions = true;  // Set flag to ignore subsequent mouse actions
+                                menuActionTime = SDL_GetTicks();  // Record time of menu action
+                            } else if (!ignoreMouseActions && (SDL_GetTicks() - menuActionTime > MENU_ACTION_DELAY)) {  // Check timer
+                                if (smoothZoomMode) {
+                                    // In smooth zoom mode, just update current position
+                                    currentX = event.button.x;
+                                    currentY = event.button.y;
+                                } else {
+                                    // Start drawing selection rectangle
+                                    drawing = true;
+                                    startX = event.button.x;
+                                    startY = event.button.y;
+                                    currentX = startX;
+                                    currentY = startY;
+                                }
                             }
                         } else if (event.button.button == SDL_BUTTON_RIGHT) {
-                            if (!smoothZoomMode) {
-                                // Zoom out to previous view
-                                zoomOut(centerX, centerY, zoom, maxIterations, viewer);
+                            if (!ignoreMouseActions && (!showMenu || event.button.y >= MENU_HEIGHT) && 
+                                (SDL_GetTicks() - menuActionTime > MENU_ACTION_DELAY)) {  // Check timer
+                                if (!smoothZoomMode) {
+                                    // Zoom out to previous view
+                                    zoomOut(centerX, centerY, zoom, maxIterations, viewer);
+                                }
                             }
                         } else if (event.button.button == SDL_BUTTON_MIDDLE) {
-                            // Middle click for panning
-                            isDragging = true;
-                            lastMouseX = event.button.x;
-                            lastMouseY = event.button.y;
+                            if (!ignoreMouseActions && (!showMenu || event.button.y >= MENU_HEIGHT) && 
+                                (SDL_GetTicks() - menuActionTime > MENU_ACTION_DELAY)) {  // Check timer
+                                // Middle click for panning
+                                isDragging = true;
+                                lastMouseX = event.button.x;
+                                lastMouseY = event.button.y;
+                            }
                         }
                         break;
 
                     case SDL_MOUSEBUTTONUP:
                         if (event.button.button == SDL_BUTTON_LEFT) {
-                            if (drawing) {
-                                // Complete selection rectangle
-                                drawing = false;
-                                if (abs(currentX - startX) > 5 && abs(currentY - startY) > 5) {
-                                    zoomToSelection(startX, startY, currentX, currentY, centerX, centerY, zoom);
+                            if (!ignoreMouseActions && (!showMenu || event.button.y >= MENU_HEIGHT) && 
+                                (SDL_GetTicks() - menuActionTime > MENU_ACTION_DELAY)) {  // Check timer
+                                if (drawing) {
+                                    // Complete selection rectangle
+                                    drawing = false;
+                                    if (abs(currentX - startX) > 5 && abs(currentY - startY) > 5) {
+                                        zoomToSelection(startX, startY, currentX, currentY, centerX, centerY, zoom);
+                                    }
                                 }
                             }
+                            ignoreMouseActions = false;  // Reset the flag on mouse button up
                         } else if (event.button.button == SDL_BUTTON_MIDDLE) {
-                            // Stop panning
-                            isDragging = false;
+                            if (!ignoreMouseActions && (!showMenu || event.button.y >= MENU_HEIGHT) && 
+                                (SDL_GetTicks() - menuActionTime > MENU_ACTION_DELAY)) {  // Check timer
+                                // Stop panning
+                                isDragging = false;
+                            }
                         }
                         break;
 
                     case SDL_MOUSEMOTION:
-                        if (isDragging) {
-                            // Panning with middle mouse button
-                            int currentX = event.motion.x;
-                            int currentY = event.motion.y;
-                            int deltaX = currentX - lastMouseX;
-                            int deltaY = currentY - lastMouseY;
-                            
-                            // Convert pixel movement to complex plane movement
-                            double scale = 4.0 / zoom;
-                            centerX -= deltaX * scale / WINDOW_WIDTH;
-                            centerY -= deltaY * scale / WINDOW_HEIGHT;  // Inverted y-axis by changing + to -
-                            
-                            lastMouseX = currentX;
-                            lastMouseY = currentY;
-                        } else if (drawing) {
-                            // Update selection rectangle
-                            currentX = event.motion.x;
-                            currentY = event.motion.y;
+                        if (!ignoreMouseActions && (!showMenu || event.motion.y >= MENU_HEIGHT) && 
+                            (SDL_GetTicks() - menuActionTime > MENU_ACTION_DELAY)) {  // Check timer
+                            if (isDragging) {
+                                // Panning with middle mouse button
+                                int currentX = event.motion.x;
+                                int currentY = event.motion.y;
+                                int deltaX = currentX - lastMouseX;
+                                int deltaY = currentY - lastMouseY;
+                                
+                                // Convert pixel movement to complex plane movement
+                                double scale = 4.0 / zoom;
+                                centerX -= deltaX * scale / WINDOW_WIDTH;
+                                centerY -= deltaY * scale / WINDOW_HEIGHT;  // Inverted y-axis by changing + to -
+                                
+                                lastMouseX = currentX;
+                                lastMouseY = currentY;
+                            } else if (drawing) {
+                                // Update selection rectangle
+                                currentX = event.motion.x;
+                                currentY = event.motion.y;
+                            }
                         }
                         break;
 
@@ -292,11 +362,11 @@ int main(int argc, char* argv[]) {
                                 viewer.setColorMode(colorMode);
                                 break;
                             case SDLK_z:
-                                colorShift -= 0.1;
+                                colorShift = normalizeColorShift(colorShift - 0.1);
                                 viewer.setColorShift(colorShift);
                                 break;
                             case SDLK_x:
-                                colorShift += 0.1;
+                                colorShift = normalizeColorShift(colorShift + 0.1);
                                 viewer.setColorShift(colorShift);
                                 break;
                             case SDLK_i:
@@ -384,11 +454,11 @@ int main(int argc, char* argv[]) {
                                 isPanning = true;
                                 break;
                             case SDLK_LEFT:
-                                colorShift -= 0.1;
+                                colorShift = normalizeColorShift(colorShift - 0.1);
                                 viewer.setColorShift(colorShift);
                                 break;
                             case SDLK_RIGHT:
-                                colorShift += 0.1;
+                                colorShift = normalizeColorShift(colorShift + 0.1);
                                 viewer.setColorShift(colorShift);
                                 break;
                             case SDLK_UP:
@@ -448,19 +518,21 @@ int main(int argc, char* argv[]) {
             // Handle continuous zooming in the main loop
             if (smoothZoomMode) {
                 Uint32 mouseState = SDL_GetMouseState(&currentX, &currentY);
-                if (mouseState & SDL_BUTTON(SDL_BUTTON_LEFT)) {
-                    // Zoom in while left button is held
-                    smoothZoomToCursor(false, currentX, currentY, centerX, centerY, zoom);
-                    //saveViewToHistory(centerX, centerY, zoom, maxIterations);
-                } else if (mouseState & SDL_BUTTON(SDL_BUTTON_RIGHT)) {
-                    // Zoom out while right button is held
-                    smoothZoomToCursor(true, currentX, currentY, centerX, centerY, zoom);
-                    //saveViewToHistory(centerX, centerY, zoom, maxIterations);
+                if (!showMenu || currentY >= MENU_HEIGHT) {
+                    if (SDL_GetTicks() - menuActionTime > MENU_ACTION_DELAY) {  // Check timer
+                        if (mouseState & SDL_BUTTON(SDL_BUTTON_LEFT)) {
+                            // Zoom in while left button is held
+                            smoothZoomToCursor(false, currentX, currentY, centerX, centerY, zoom);
+                        } else if (mouseState & SDL_BUTTON(SDL_BUTTON_RIGHT)) {
+                            // Zoom out while right button is held
+                            smoothZoomToCursor(true, currentX, currentY, centerX, centerY, zoom);
+                        }
+                    }
                 }
             }
 
             // Handle panning
-            if (isPanning) {
+            if (isPanning && SDL_GetTicks() - menuActionTime > MENU_ACTION_DELAY) {  // Check timer
                 panView(isPanning, centerX, centerY, zoom);
             }
 
@@ -502,6 +574,11 @@ int main(int argc, char* argv[]) {
             // Draw UI if enabled
             if (showUI) {
                 drawUI(renderer, font, titleFont, messageFont, WINDOW_WIDTH, WINDOW_HEIGHT);
+            }
+            
+            // Draw menu if enabled
+            if (showMenu) {
+                drawMenu(renderer, font, WINDOW_WIDTH);
             }
             
             // Always draw top message
@@ -684,6 +761,59 @@ void drawUI(SDL_Renderer* renderer, TTF_Font* font, TTF_Font* titleFont, TTF_Fon
         SDL_DestroyTexture(textTexture);
         
         yOffset += 15;
+    }
+}
+
+void drawMenu(SDL_Renderer* renderer, TTF_Font* font, int width) {
+    if (!showMenu) return;
+
+    // Draw menu bar background
+    SDL_SetRenderDrawColor(renderer, 240, 240, 240, 255);
+    SDL_Rect menuBar = {0, 0, width, MENU_HEIGHT};
+    SDL_RenderFillRect(renderer, &menuBar);
+
+    // Draw menu bar border
+    SDL_SetRenderDrawColor(renderer, 200, 200, 200, 255);
+    SDL_RenderDrawLine(renderer, 0, MENU_HEIGHT, width, MENU_HEIGHT);
+
+    // Draw File menu
+    SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
+    SDL_Rect fileMenuRect = {130, 0, 40, MENU_HEIGHT};
+    SDL_RenderDrawRect(renderer, &fileMenuRect);
+    
+    // Draw File text
+    SDL_Color textColor = {0, 0, 0, 255};
+    SDL_Surface* textSurface = TTF_RenderText_Solid(font, "File", textColor);
+    SDL_Texture* textTexture = SDL_CreateTextureFromSurface(renderer, textSurface);
+    SDL_Rect textRect = {135, 2, textSurface->w, textSurface->h};
+    SDL_RenderCopy(renderer, textTexture, NULL, &textRect);
+    SDL_FreeSurface(textSurface);
+    SDL_DestroyTexture(textTexture);
+
+    // Draw File menu items if open
+    if (fileMenuOpen) {
+        SDL_SetRenderDrawColor(renderer, 240, 240, 240, 255);
+        SDL_Rect menuRect = {130, MENU_HEIGHT, 100, MENU_ITEM_HEIGHT * 2};
+        SDL_RenderFillRect(renderer, &menuRect);
+        
+        SDL_SetRenderDrawColor(renderer, 200, 200, 200, 255);
+        SDL_RenderDrawRect(renderer, &menuRect);
+
+        // Draw Reset option
+        textSurface = TTF_RenderText_Solid(font, "Reset", textColor);
+        textTexture = SDL_CreateTextureFromSurface(renderer, textSurface);
+        textRect = {135, MENU_HEIGHT + 2, textSurface->w, textSurface->h};
+        SDL_RenderCopy(renderer, textTexture, NULL, &textRect);
+        SDL_FreeSurface(textSurface);
+        SDL_DestroyTexture(textTexture);
+
+        // Draw Quit option
+        textSurface = TTF_RenderText_Solid(font, "Quit", textColor);
+        textTexture = SDL_CreateTextureFromSurface(renderer, textSurface);
+        textRect = {135, MENU_HEIGHT + MENU_ITEM_HEIGHT + 2, textSurface->w, textSurface->h};
+        SDL_RenderCopy(renderer, textTexture, NULL, &textRect);
+        SDL_FreeSurface(textSurface);
+        SDL_DestroyTexture(textTexture);
     }
 }
 
