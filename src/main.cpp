@@ -24,8 +24,8 @@ std::vector<ZoomState> zoomHistory;
 #define DEFAULT_MAX_ITERATIONS 200
 
 // Constants for UI
-const int PANEL_WIDTH = 230;
-const int PANEL_HEIGHT = 315;  // Reduced by 30% from 450
+const int PANEL_WIDTH = 300;  // Increased from 230
+const int PANEL_HEIGHT = 400;  // Increased from 315
 const int FONT_SIZE = 12;
 const int TITLE_FONT_SIZE = 13;;
 const int MESSAGE_FONT_SIZE = 14;
@@ -875,7 +875,7 @@ void drawUI(SDL_Renderer* renderer, TTF_Font* font, TTF_Font* titleFont, TTF_Fon
     SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_BLEND);
     
     // Left panel (Help) - centered vertically
-    SDL_Rect leftPanel = {10, (height - PANEL_HEIGHT) / 2, PANEL_WIDTH, PANEL_HEIGHT};
+    SDL_Rect leftPanel = {20, (height - PANEL_HEIGHT) / 2, PANEL_WIDTH, PANEL_HEIGHT};  // Increased x position from 10 to 20
     SDL_SetRenderDrawColor(renderer, 20, 20, 40, 200);
     SDL_RenderFillRect(renderer, &leftPanel);
     SDL_SetRenderDrawColor(renderer, 100, 100, 150, 255);
@@ -889,7 +889,6 @@ void drawUI(SDL_Renderer* renderer, TTF_Font* font, TTF_Font* titleFont, TTF_Fon
     std::vector<std::string> helpTexts = {
         "Controls:",
         " ",  
-        " ",  
         "M: Toggle zoom mode (smooth/selection)",
         "In Smooth Zoom Mode:",
         "  Left/Right click (hold): Smooth zoom", 
@@ -899,26 +898,25 @@ void drawUI(SDL_Renderer* renderer, TTF_Font* font, TTF_Font* titleFont, TTF_Fon
         "  Right click: Zoom out to previous view",
         "W/A/S/D: Pan the view",
         "C: Change color mode",
-        "Z/X: Shift colors left/right",
-        "Q/E: Decrease/Increase quality multiplier",
-        "R: Reset view",
-        "H: Toggle help panels",
+        "Z/X: Shift colors",
+        "Q/E: Change quality multiplier",
+        "R: Reset view"
     };
     
     // Draw help text - centered vertically
-    int yOffset = (height - PANEL_HEIGHT) / 2 + 5;  // 5 pixels padding from top
+    int yOffset = (height - PANEL_HEIGHT) / 2 + 10;  // Increased padding from 5 to 10
     for (size_t i = 0; i < helpTexts.size(); i++) {
         SDL_Surface* textSurface;
         if (i == 0) {
             textSurface = TTF_RenderText_Solid(titleFont, helpTexts[i].c_str(), titleColor);
         } else {
-            textSurface = TTF_RenderText_Solid(font, helpTexts[i].c_str(), infoColor);
+            textSurface = TTF_RenderText_Solid(messageFont, helpTexts[i].c_str(), infoColor);
         }
         
         SDL_Texture* textTexture = SDL_CreateTextureFromSurface(renderer, textSurface);
         
         SDL_Rect textRect;
-        textRect.x = 15;
+        textRect.x = 30;  // Increased from 15 to 30 for better left margin
         textRect.y = yOffset;
         textRect.w = textSurface->w;
         textRect.h = textSurface->h;
@@ -928,7 +926,7 @@ void drawUI(SDL_Renderer* renderer, TTF_Font* font, TTF_Font* titleFont, TTF_Fon
         SDL_FreeSurface(textSurface);
         SDL_DestroyTexture(textTexture);
         
-        yOffset += 15;
+        yOffset += 25;  // Increased spacing from 20 to 25 for better readability
     }
 }
 
