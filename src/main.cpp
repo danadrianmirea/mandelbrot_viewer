@@ -6,6 +6,8 @@
 #include <vector>
 #include <cmath>
 #include <algorithm>
+#include <iomanip>
+#include <sstream>
 #include "mandelbrot.hpp"
 #include "view_state.hpp"
 
@@ -19,11 +21,11 @@ struct ZoomState {
 std::vector<ZoomState> zoomHistory;
 
 #define FULLSCREEN 0
-#define DEFAULT_MAX_ITERATIONS 100
+#define DEFAULT_MAX_ITERATIONS 200
 
 // Constants for UI
 const int PANEL_WIDTH = 230;
-const int PANEL_HEIGHT = 450;  // Increased from 400 to accommodate all text
+const int PANEL_HEIGHT = 315;  // Reduced by 30% from 450
 const int FONT_SIZE = 12;
 const int TITLE_FONT_SIZE = 13;;
 const int MESSAGE_FONT_SIZE = 14;
@@ -88,6 +90,8 @@ std::string lastRenderFilename = "render.png";  // Default render filename
 
 // Add after other menu item constants
 const int MENU_ITEM_RENDER = 5;  // New constant for render menu item
+
+const std::string colorNames[] = {"Rainbow", "Fire", "Electric Blue", "Twilight", "Neon", "Vintage"};
 
 // Function to normalize color shift to [0, 2*PI] range
 double normalizeColorShift(double shift) {
@@ -516,48 +520,14 @@ int main(int argc, char* argv[]) {
                                 colorShift = normalizeColorShift(colorShift + 0.1);
                                 viewer.setColorShift(colorShift);
                                 break;
-                            case SDLK_i:
-                                {
-                                    int newMaxIter = maxIterations * 2;
-                                    maxIterations = newMaxIter;
-                                    int effectiveMaxIter = highQualityMode ? maxIterations * highQualityMultiplier : maxIterations;
-                                    viewer.setMaxIterations(effectiveMaxIter);
-                                }
-                                break;
-                            case SDLK_o:
-                                {
-                                    int newMaxIter = maxIterations / 2;
-                                    if (newMaxIter > 0) {
-                                        maxIterations = newMaxIter;
-                                        int effectiveMaxIter = highQualityMode ? maxIterations * highQualityMultiplier : maxIterations;
-                                        viewer.setMaxIterations(effectiveMaxIter);
-                                    }
-                                }
-                                break;
                             case SDLK_m:
                                 smoothZoomMode = !smoothZoomMode;
                                 std::cout << "Zoom mode: " << (smoothZoomMode ? "Smooth" : "Rectangle") << std::endl;
                                 break;
-                            case SDLK_e:
-                                {
-                                    // Start smooth zooming in
-                                    smoothZoomMode = true;
-                                    smoothZoomToCursor(false, currentX, currentY, centerX, centerY, zoom);
-                                    saveViewToHistory(centerX, centerY, zoom, maxIterations);
-                                }
-                                break;
                             case SDLK_q:
-                                {
-                                    // Start smooth zooming out
-                                    smoothZoomMode = true;
-                                    smoothZoomToCursor(true, currentX, currentY, centerX, centerY, zoom);
-                                    saveViewToHistory(centerX, centerY, zoom, maxIterations);
-                                }
-                                break;
-                            case SDLK_j:
                                 adjustQualityMultiplier(false, highQualityMultiplier, minQualityMultiplier);
                                 break;
-                            case SDLK_k:
+                            case SDLK_e:
                                 adjustQualityMultiplier(true, highQualityMultiplier, minQualityMultiplier);
                                 break;
                             case SDLK_r:
@@ -565,11 +535,6 @@ int main(int argc, char* argv[]) {
                                 break;
                             case SDLK_h:
                                 showUI = !showUI;
-                                break;
-                            case SDLK_BACKSPACE:
-                                zoomOut(centerX, centerY, zoom, maxIterations, viewer);
-                                break;
-                            case SDLK_ESCAPE:
                                 break;
                             case SDLK_w:
                                 keyPressed[0] = true; // up
@@ -587,48 +552,11 @@ int main(int argc, char* argv[]) {
                                 keyPressed[3] = true; // right
                                 isPanning = true;
                                 break;
-                            case SDLK_LEFT:
-                                colorShift = normalizeColorShift(colorShift - 0.1);
-                                viewer.setColorShift(colorShift);
-                                break;
-                            case SDLK_RIGHT:
-                                colorShift = normalizeColorShift(colorShift + 0.1);
-                                viewer.setColorShift(colorShift);
-                                break;
-                            case SDLK_UP:
-                                {
-                                    int newMaxIter = maxIterations * 2;
-                                    maxIterations = newMaxIter;
-                                    int effectiveMaxIter = highQualityMode ? maxIterations * highQualityMultiplier : maxIterations;
-                                    viewer.setMaxIterations(effectiveMaxIter);
-                                }
-                                break;
-                            case SDLK_DOWN:
-                                {
-                                    int newMaxIter = maxIterations / 2;
-                                    if (newMaxIter > 0) {
-                                        maxIterations = newMaxIter;
-                                        int effectiveMaxIter = highQualityMode ? maxIterations * highQualityMultiplier : maxIterations;
-                                        viewer.setMaxIterations(effectiveMaxIter);
-                                    }
-                                }
-                                break;
-                            case SDLK_p:
-                                std::cout << "Current settings: centerX=" << centerX << ", centerY=" << centerY 
-                                          << ", zoom=" << zoom << ", maxIterations=" << maxIterations << std::endl;
-                                std::cout << "Color mode: " << colorMode << ", Color shift: " << colorShift << std::endl;
-                                std::cout << "Zoom history depth: " << zoomHistory.size() << std::endl;
-                                break;
                         }
                         break;
                         
                     case SDL_KEYUP:
                         switch (event.key.keysym.sym) {
-                            case SDLK_e:
-                            case SDLK_q:
-                                // Stop smooth zooming
-                                smoothZoomMode = false;
-                                break;
                             case SDLK_w:
                                 keyPressed[0] = false; // up
                                 break;
@@ -786,7 +714,8 @@ int main(int argc, char* argv[]) {
             // Handle continuous zooming in the main loop
             if (smoothZoomMode) {
                 Uint32 mouseState = SDL_GetMouseState(&currentX, &currentY);
-                if (!showMenu || currentY >= MENU_HEIGHT) {
+                // Prevent zooming if menu is open or y is in menu bar
+                if (!showMenu || (currentY < 0 || currentY >= MENU_HEIGHT)) {
                     if (SDL_GetTicks() - menuActionTime > MENU_ACTION_DELAY && 
                         SDL_GetTicks() - dialogCloseTime > DIALOG_CLOSE_DELAY) {  // Check dialog close timer
                         if (mouseState & SDL_BUTTON(SDL_BUTTON_LEFT)) {
@@ -850,37 +779,73 @@ int main(int argc, char* argv[]) {
                 drawMenu(renderer, font, WINDOW_WIDTH);
             }
             
-            // Always draw top message
             SDL_Color textColor = {255, 255, 255, 255};
-            SDL_Surface* messageSurface = TTF_RenderText_Solid(messageFont, "Press H to toggle help and debug info", textColor);
-            SDL_Texture* messageTexture = SDL_CreateTextureFromSurface(renderer, messageSurface);
+
+            // Draw settings info in top right
+            std::string qualityText = highQualityMode ? "HQ " + std::to_string(highQualityMultiplier) + "x" : "Standard";
             
-            SDL_Rect messageRect;
-            messageRect.x = (WINDOW_WIDTH - messageSurface->w) / 2;
-            messageRect.y = 30;
-            messageRect.w = messageSurface->w;
-            messageRect.h = messageSurface->h;
+            // Format numbers consistently with fixed precision
+            std::stringstream ss;
+            ss << std::fixed << std::setprecision(2);
             
-            SDL_RenderCopy(renderer, messageTexture, nullptr, &messageRect);
+            // Create settings text with consistent formatting
+            std::string settingsText[] = {
+                "Iterations: " + std::to_string(effectiveMaxIter) + " (" + qualityText + ")",
+                "Center: (" + std::to_string(static_cast<int>(centerX * 100) / 100.0) + ", " + 
+                            std::to_string(static_cast<int>(centerY * 100) / 100.0) + ")",
+                "Zoom: " + std::to_string(static_cast<int>(zoom * 100) / 100.0),
+                "Color: " + colorNames[colorMode] + " (Shift: " + 
+                            std::to_string(static_cast<int>(colorShift * 100) / 100.0) + ")",
+                "H for help"
+            };
             
-            SDL_FreeSurface(messageSurface);
-            SDL_DestroyTexture(messageTexture);
+            // Pre-calculate all surfaces and find maximum dimensions
+            std::vector<SDL_Surface*> surfaces;
+            int maxWidth = 0;
+            int totalHeight = 0;
             
-            // Draw iterations count
-            std::string iterText = "Iterations: " + std::to_string(effectiveMaxIter);
-            SDL_Surface* iterSurface = TTF_RenderText_Solid(messageFont, iterText.c_str(), textColor);
-            SDL_Texture* iterTexture = SDL_CreateTextureFromSurface(renderer, iterSurface);
+            for (const auto& text : settingsText) {
+                SDL_Surface* surface = TTF_RenderText_Solid(messageFont, text.c_str(), textColor);
+                if (surface) {
+                    surfaces.push_back(surface);
+                    maxWidth = std::max(maxWidth, surface->w);
+                    totalHeight += surface->h;
+                }
+            }
             
-            SDL_Rect iterRect;
-            iterRect.x = (WINDOW_WIDTH - iterSurface->w) / 2;
-            iterRect.y = messageRect.y + messageRect.h + 5;  // Position below the "Press H" text
-            iterRect.w = iterSurface->w;
-            iterRect.h = iterSurface->h;
+            // Calculate spacing
+            const int LINE_SPACING = 10;
+            const int RIGHT_MARGIN = 10;
+            const int NUM_LINES = surfaces.size();
+            const int TOTAL_SPACING = (NUM_LINES - 1) * LINE_SPACING;
+            const int TOTAL_HEIGHT = totalHeight + TOTAL_SPACING;
             
-            SDL_RenderCopy(renderer, iterTexture, nullptr, &iterRect);
+            // Start y-position to center the text block vertically
+            int settingsY = 30;
             
-            SDL_FreeSurface(iterSurface);
-            SDL_DestroyTexture(iterTexture);
+            // Render all text elements
+            for (size_t i = 0; i < surfaces.size(); ++i) {
+                SDL_Surface* surface = surfaces[i];
+                if (surface) {
+                    SDL_Texture* texture = SDL_CreateTextureFromSurface(renderer, surface);
+                    if (texture) {
+                        SDL_Rect rect;
+                        rect.x = WINDOW_WIDTH - maxWidth - RIGHT_MARGIN;
+                        rect.y = settingsY;
+                        rect.w = surface->w;
+                        rect.h = surface->h;
+                        
+                        SDL_RenderCopy(renderer, texture, nullptr, &rect);
+                        SDL_DestroyTexture(texture);
+                    }
+                    settingsY += surface->h + LINE_SPACING;
+                }
+            }
+            
+            // Clean up surfaces
+            for (SDL_Surface* surface : surfaces) {
+                SDL_FreeSurface(surface);
+            }
             
             SDL_RenderPresent(renderer);
         }
@@ -909,19 +874,12 @@ void drawUI(SDL_Renderer* renderer, TTF_Font* font, TTF_Font* titleFont, TTF_Fon
     // Create semi-transparent background for panels
     SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_BLEND);
     
-    // Left panel (Help)
-    SDL_Rect leftPanel = {10, height - PANEL_HEIGHT - 60, PANEL_WIDTH, PANEL_HEIGHT};
+    // Left panel (Help) - centered vertically
+    SDL_Rect leftPanel = {10, (height - PANEL_HEIGHT) / 2, PANEL_WIDTH, PANEL_HEIGHT};
     SDL_SetRenderDrawColor(renderer, 20, 20, 40, 200);
     SDL_RenderFillRect(renderer, &leftPanel);
     SDL_SetRenderDrawColor(renderer, 100, 100, 150, 255);
     SDL_RenderDrawRect(renderer, &leftPanel);
-    
-    // Right panel (Settings)
-    SDL_Rect rightPanel = {width - PANEL_WIDTH - 10, height - PANEL_HEIGHT - 60, PANEL_WIDTH, PANEL_HEIGHT};
-    SDL_SetRenderDrawColor(renderer, 20, 20, 40, 200);
-    SDL_RenderFillRect(renderer, &rightPanel);
-    SDL_SetRenderDrawColor(renderer, 100, 100, 150, 255);
-    SDL_RenderDrawRect(renderer, &rightPanel);
     
     // Help text
     SDL_Color textColor = {255, 255, 255, 255};
@@ -930,56 +888,25 @@ void drawUI(SDL_Renderer* renderer, TTF_Font* font, TTF_Font* titleFont, TTF_Fon
     
     std::vector<std::string> helpTexts = {
         "Controls:",
-        " ",  // Added empty line for spacing
+        " ",  
+        " ",  
         "M: Toggle zoom mode (smooth/selection)",
-        smoothZoomMode ? "Zoom Mode: Smooth" : "Zoom Mode: Rectangle Selection",
         "In Smooth Zoom Mode:",
-        "  Left click (hold): Zoom in at cursor", 
-        "  Right click (hold): Zoom out at cursor",
+        "  Left/Right click (hold): Smooth zoom", 
         "  Hold Shift for faster zooming",
-        "In Rectangle Mode:",
+        "In Rectangle Selection Mode:",
         "  Left click and drag: Select zoom area",
         "  Right click: Zoom out to previous view",
-        "Panning:",
-        "  W: Pan up",
-        "  S: Pan down",
-        "  A: Pan left",
-        "  D: Pan right",
-        "E (hold): Smooth zoom in toward cursor",
-        "Q (hold): Smooth zoom out from cursor",
+        "W/A/S/D: Pan the view",
         "C: Change color mode",
         "Z/X: Shift colors left/right",
-        "I/O: Increase/Decrease iterations", 
-        "J/K: Decrease/Increase quality multiplier",
+        "Q/E: Decrease/Increase quality multiplier",
         "R: Reset view",
-        "P: Print current settings",
-        "Backspace: Zoom out",
         "H: Toggle help panels",
     };
     
-    // Settings text
-    std::string colorNames[] = {"Rainbow", "Fire", "Electric Blue", "Twilight", "Neon", "Vintage"};
-    std::string qualityText = highQualityMode ? "HQ " + std::to_string(highQualityMultiplier) + "x" : "Standard";
-    int effectiveMaxIter = highQualityMode ? maxIterations * highQualityMultiplier : maxIterations;
-    std::string debugText = debugMode ? "Debug ON" : "Debug OFF";
-    std::string renderScaleText = adaptiveRenderScale ? "Enabled" : "Disabled";
-    
-    std::vector<std::string> settingsTexts = {
-        "Current Settings:",
-        " ",  // Added empty line for spacing
-        "Center: (" + std::to_string(centerX) + ", " + std::to_string(centerY) + ")",
-        "Zoom: " + std::to_string(zoom),
-        "Iterations: " + std::to_string(effectiveMaxIter) + " (" + qualityText + ")",
-        "Color: " + colorNames[colorMode] + " (Shift: " + std::to_string(colorShift) + ")",
-        "Resolution: " + std::to_string(width) + "x" + std::to_string(height)
-    };
-    
-    if (adaptiveRenderScale) {
-        settingsTexts.push_back("Render Scale: " + std::to_string(static_cast<int>(renderScale * 100)) + "% (" + renderScaleText + ")");
-    }
-    
-    // Draw help text
-    int yOffset = height - PANEL_HEIGHT - 55;  // Adjusted to match new panel position
+    // Draw help text - centered vertically
+    int yOffset = (height - PANEL_HEIGHT) / 2 + 5;  // 5 pixels padding from top
     for (size_t i = 0; i < helpTexts.size(); i++) {
         SDL_Surface* textSurface;
         if (i == 0) {
@@ -992,32 +919,6 @@ void drawUI(SDL_Renderer* renderer, TTF_Font* font, TTF_Font* titleFont, TTF_Fon
         
         SDL_Rect textRect;
         textRect.x = 15;
-        textRect.y = yOffset;
-        textRect.w = textSurface->w;
-        textRect.h = textSurface->h;
-        
-        SDL_RenderCopy(renderer, textTexture, nullptr, &textRect);
-        
-        SDL_FreeSurface(textSurface);
-        SDL_DestroyTexture(textTexture);
-        
-        yOffset += 15;
-    }
-    
-    // Draw settings text
-    yOffset = height - PANEL_HEIGHT - 55;  // Adjusted to match new panel position
-    for (size_t i = 0; i < settingsTexts.size(); i++) {
-        SDL_Surface* textSurface;
-        if (i == 0) {
-            textSurface = TTF_RenderText_Solid(titleFont, settingsTexts[i].c_str(), titleColor);
-        } else {
-            textSurface = TTF_RenderText_Solid(font, settingsTexts[i].c_str(), infoColor);
-        }
-        
-        SDL_Texture* textTexture = SDL_CreateTextureFromSurface(renderer, textSurface);
-        
-        SDL_Rect textRect;
-        textRect.x = width - PANEL_WIDTH - 5;
         textRect.y = yOffset;
         textRect.w = textSurface->w;
         textRect.h = textSurface->h;
@@ -1679,12 +1580,11 @@ void showAboutDialog(SDL_Renderer* renderer, TTF_Font* font) {
             "  - W/A/S/D: Pan the view",
             "  - C: Change color mode",
             "  - Z/X: Shift colors left/right",
-            "  - I/O: Increase/Decrease iterations",
-            "  - J/K: Decrease/Increase quality multiplier",
+            "  - Q/E: Decrease/Increase quality multiplier",
             "  - R: Reset view",
+            "  - M: Toggle zoom mode (smooth/selection)",
             "  - H: Toggle help panels",
-            "  - P: Print current settings",
-            "  - Backspace: Zoom out"
+            "  - P: Print current settings"
         };
         
         int yOffset = DIALOG_Y + 50;
